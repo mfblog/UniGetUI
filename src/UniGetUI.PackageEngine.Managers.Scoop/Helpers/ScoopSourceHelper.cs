@@ -11,9 +11,14 @@ namespace UniGetUI.PackageEngine.Managers.ScoopManager
 {
     internal sealed class ScoopSourceHelper : BaseSourceHelper
     {
-        public ScoopSourceHelper(Scoop manager) : base(manager) { }
+        public ScoopSourceHelper(Scoop manager)
+            : base(manager) { }
 
-        protected override OperationVeredict _getAddSourceOperationVeredict(IManagerSource source, int ReturnCode, string[] Output)
+        protected override OperationVeredict _getAddSourceOperationVeredict(
+            IManagerSource source,
+            int ReturnCode,
+            string[] Output
+        )
         {
             return ReturnCode == 0 ? OperationVeredict.Success : OperationVeredict.Failure;
         }
@@ -23,7 +28,11 @@ namespace UniGetUI.PackageEngine.Managers.ScoopManager
             return ["bucket", "add", source.Name, source.Url.ToString()];
         }
 
-        protected override OperationVeredict _getRemoveSourceOperationVeredict(IManagerSource source, int ReturnCode, string[] Output)
+        protected override OperationVeredict _getRemoveSourceOperationVeredict(
+            IManagerSource source,
+            int ReturnCode,
+            string[] Output
+        )
         {
             return ReturnCode == 0 ? OperationVeredict.Success : OperationVeredict.Failure;
         }
@@ -40,7 +49,7 @@ namespace UniGetUI.PackageEngine.Managers.ScoopManager
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = Manager.Status.ExecutablePath,
-                    Arguments = Manager.Properties.ExecutableCallArgs + " bucket list",
+                    Arguments = Manager.Status.ExecutableCallArgs + " bucket list",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     RedirectStandardInput = true,
@@ -48,55 +57,97 @@ namespace UniGetUI.PackageEngine.Managers.ScoopManager
                     CreateNoWindow = true,
                     StandardInputEncoding = System.Text.Encoding.UTF8,
                     StandardOutputEncoding = System.Text.Encoding.UTF8,
-                }
+                },
             };
 
-            IProcessTaskLogger logger = Manager.TaskLogger.CreateNew(LoggableTaskType.ListSources, p);
-            List<ManagerSource> sources = [];
+            IProcessTaskLogger logger = Manager.TaskLogger.CreateNew(
+                LoggableTaskType.ListSources,
+                p
+            );
 
             p.Start();
+            p.StandardInput.Close();
 
-            bool DashesPassed = false;
+            return ParseSources(ScoopProcess.ReadLines(p, logger));
+        }
 
-            string? line;
-            while ((line = p.StandardOutput.ReadLine()) is not null)
+        internal IReadOnlyList<IManagerSource> ParseSources(IEnumerable<string> lines)
+        {
+            List<ManagerSource> sources = [];
+            bool dashesPassed = false;
+
+            foreach (string line in lines)
             {
-                logger.AddToStdOut(line);
                 try
                 {
-                    if (!DashesPassed)
+                    if (!dashesPassed)
                     {
                         if (line.Contains("---"))
                         {
-                            DashesPassed = true;
+                            dashesPassed = true;
                         }
-                    }
-                    else if (line.Trim() != "")
-                    {
-                        string[] elements = Regex.Replace(Regex.Replace(line, "[1234567890 :.-][AaPp][Mm][\\W]", "").Trim(), " {2,}", " ").Split(' ');
-                        if (elements.Length >= 5)
-                        {
-                            if (!elements[1].Contains("https://") && !elements[1].Contains("http://"))
-                            {
-                                elements[1] = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                                    "scoop", "buckets", elements[0].Trim());
-                            }
-                            else
-                            {
-                                elements[1] = Regex.Replace(elements[1], @"^(.*)\.git$", "$1");
-                            }
 
-                            try
-                            {
-                                sources.Add(new ManagerSource(Manager, elements[0].Trim(), new Uri(elements[1]),
-                                    int.Parse(elements[4].Trim()), elements[2].Trim() + " " + elements[3].Trim()));
-                            }
-                            catch (Exception ex)
-                            {
-                                logger.AddToStdErr(ex.ToString());
-                                sources.Add(new ManagerSource(Manager, elements[0].Trim(), new Uri(elements[1]), -1, "1/1/1970"));
-                            }
-                        }
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(line))
+                    {
+                        continue;
+                    }
+
+                    string[] elements = Regex
+                        .Replace(
+                            Regex.Replace(line, "[1234567890 :.-][AaPp][Mm][\\W]", "").Trim(),
+                            " {2,}",
+                            " "
+                        )
+                        .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    if (elements.Length < 5)
+                    {
+                        continue;
+                    }
+
+                    if (
+                        !elements[1].Contains("https://")
+                        && !elements[1].Contains("http://")
+                    )
+                    {
+                        elements[1] = Path.Join(
+                            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                            "scoop",
+                            "buckets",
+                            elements[0].Trim()
+                        );
+                    }
+                    else
+                    {
+                        elements[1] = Regex.Replace(elements[1], @"^(.*)\.git$", "$1");
+                    }
+
+                    try
+                    {
+                        sources.Add(
+                            new ManagerSource(
+                                Manager,
+                                elements[0].Trim(),
+                                new Uri(elements[1]),
+                                int.Parse(elements[4].Trim()),
+                                elements[2].Trim() + " " + elements[3].Trim()
+                            )
+                        );
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Warn(ex);
+                        sources.Add(
+                            new ManagerSource(
+                                Manager,
+                                elements[0].Trim(),
+                                new Uri(elements[1]),
+                                -1,
+                                "1/1/1970"
+                            )
+                        );
                     }
                 }
                 catch (Exception e)
@@ -104,9 +155,6 @@ namespace UniGetUI.PackageEngine.Managers.ScoopManager
                     Logger.Warn(e);
                 }
             }
-            logger.AddToStdErr(p.StandardError.ReadToEnd());
-            p.WaitForExit();
-            logger.Close(p.ExitCode);
 
             return sources;
         }

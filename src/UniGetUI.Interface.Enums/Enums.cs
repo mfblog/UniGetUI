@@ -12,7 +12,7 @@ namespace UniGetUI.Interface.Enums
         OnQueue,
         BeingProcessed,
         Failed,
-        Unavailable
+        Unavailable,
     }
 
     public enum IconType
@@ -83,7 +83,14 @@ namespace UniGetUI.Interface.Enums
         Warning_Round = '\uE93F',
         WinGet = '\uE940',
         Rust = '\uE941',
-        Vcpkg = '\uE942'
+        Vcpkg = '\uE942',
+        Homebrew = '\uE943',
+        Apt = '\uE944',
+        Dnf = '\uE945',
+        Pacman = '\uE946',
+        Snap = '\uE947',
+        Flatpak = '\uE948',
+        Bun = '\uE949',
     }
 
     public class NotificationArguments
@@ -92,5 +99,25 @@ namespace UniGetUI.Interface.Enums
         public const string ShowOnUpdatesTab = "openUniGetUIOnUpdatesTab";
         public const string UpdateAllPackages = "updateAll";
         public const string ReleaseSelfUpdateLock = "releaseSelfUpdateLock";
+    }
+
+    public struct BundleReportEntry
+    {
+        public readonly string Line;
+        public readonly bool Allowed;
+
+        public BundleReportEntry(string line, bool allowed)
+        {
+            Line = line;
+            Allowed = allowed;
+        }
+    }
+
+    public struct BundleReport
+    {
+        public bool IsEmpty = false;
+        public Dictionary<string, List<BundleReportEntry>> Contents = new();
+
+        public BundleReport() { }
     }
 }

@@ -11,69 +11,81 @@ namespace UniGetUI.Core.IconEngine
     /// </summary>
     public class IconDatabase
     {
+        private const string ICON_DATABASE_FILE_NAME = "Icon Database.json";
+        private static readonly TimeSpan ICON_DATABASE_REFRESH_INTERVAL = TimeSpan.FromDays(1);
+
         public struct IconCount
         {
             public int PackagesWithIconCount = 0;
             public int TotalScreenshotCount = 0;
             public int PackagesWithScreenshotCount = 0;
+
             public IconCount() { }
         }
 
         private static IconDatabase? __instance;
-
         public static IconDatabase Instance
         {
-            get
-            {
-                if (__instance is null)
-                {
-                    Logger.Error("IconStore.Instance was not initialized, creating an empty instance.");
-                    InitializeInstance();
-                    return Instance;
-                }
-                return __instance;
-            }
-        }
-
-        public static void InitializeInstance()
-        {
-            __instance = new();
+            get => __instance ??= new();
         }
 
         /// <summary>
         /// The icon and screenshot database
         /// </summary>
-        private Dictionary<string, IconScreenshotDatabase_v2.PackageIconAndScreenshots> IconDatabaseData = [];
+        private Dictionary<
+            string,
+            IconScreenshotDatabase_v2.PackageIconAndScreenshots
+        > IconDatabaseData = [];
         private IconCount __icon_count = new();
 
         /// <summary>
         /// Download the icon and screenshots database to a local file, and load it into memory
         /// </summary>
-        public async void LoadIconAndScreenshotsDatabase()
-        {
-            await LoadIconAndScreenshotsDatabaseAsync();
-        }
-
         public async Task LoadIconAndScreenshotsDatabaseAsync()
         {
-            string IconsAndScreenshotsFile = Path.Join(CoreData.UniGetUICacheDirectory_Data, "Icon Database.json");
+            string IconsAndScreenshotsFile = GetIconsAndScreenshotsFile();
+            bool hasCustomDownloadUrl = Settings.Get(Settings.K.IconDataBaseURL);
+            if (
+                !hasCustomDownloadUrl
+                && IsCachedDatabaseFresh(IconsAndScreenshotsFile, DateTime.UtcNow)
+            )
+            {
+                Logger.Debug("Using cached icons and screenshots database; refresh is not due yet");
+                await LoadFromCacheAsync();
+                if (__icon_count.PackagesWithIconCount > 0)
+                {
+                    return;
+                }
+
+                Logger.Warn(
+                    "Cached icons and screenshots database could not be loaded; refreshing it"
+                );
+            }
+
             try
             {
-                Uri DownloadUrl = new("https://raw.githubusercontent.com/marticliment/UniGetUI/main/WebBasedData/screenshot-database-v2.json");
-                if (Settings.Get("IconDataBaseURL"))
+                Uri DownloadUrl = new(
+                    "https://github.com/Devolutions/UniGetUI/raw/refs/heads/main/WebBasedData/screenshot-database-v2.json"
+                );
+                if (hasCustomDownloadUrl)
                 {
-                    DownloadUrl = new Uri(Settings.GetValue("IconDataBaseURL"));
+                    DownloadUrl = new Uri(Settings.GetValue(Settings.K.IconDataBaseURL));
                 }
 
                 using (HttpClient client = new(CoreTools.GenericHttpClientParameters))
                 {
                     client.DefaultRequestHeaders.UserAgent.ParseAdd(CoreData.UserAgentString);
                     string fileContents = await client.GetStringAsync(DownloadUrl);
-                    await File.WriteAllTextAsync(IconsAndScreenshotsFile, fileContents);
+                    await WriteCacheFileAsync(IconsAndScreenshotsFile, fileContents);
                 }
 
                 Logger.ImportantInfo("Downloaded new icons and screenshots successfully!");
 
+                if (!File.Exists(IconsAndScreenshotsFile))
+                {
+                    Logger.Error("Icon Database file not found");
+                    return;
+                }
             }
             catch (Exception e)
             {
@@ -81,17 +93,41 @@ namespace UniGetUI.Core.IconEngine
                 Logger.Warn(e);
             }
 
-            if (!File.Exists(IconsAndScreenshotsFile))
+            // Update data with new cached file
+            await LoadFromCacheAsync();
+        }
+
+        internal static bool IsCachedDatabaseFresh(string path, DateTime utcNow)
+        {
+            if (!File.Exists(path))
             {
-                Logger.Error("Icon Database file not found");
-                return;
+                return false;
             }
 
+            DateTime lastWriteTimeUtc = File.GetLastWriteTimeUtc(path);
+            return utcNow - lastWriteTimeUtc < ICON_DATABASE_REFRESH_INTERVAL;
+        }
+
+        private static string GetIconsAndScreenshotsFile()
+        {
+            return Path.Join(CoreData.UniGetUICacheDirectory_Data, ICON_DATABASE_FILE_NAME);
+        }
+
+        private static async Task WriteCacheFileAsync(string path, string contents)
+        {
+            string temporaryPath = path + ".tmp";
+            await File.WriteAllTextAsync(temporaryPath, contents);
+            File.Move(temporaryPath, path, overwrite: true);
+        }
+
+        public async Task LoadFromCacheAsync()
+        {
             try
             {
-                IconScreenshotDatabase_v2 JsonData = JsonSerializer.Deserialize<IconScreenshotDatabase_v2>(
-                    await File.ReadAllTextAsync(IconsAndScreenshotsFile),
-                    SerializationHelpers.DefaultOptions
+                string IconsAndScreenshotsFile = GetIconsAndScreenshotsFile();
+                IconScreenshotDatabase_v2 JsonData =
+                    IconStoreJson.DeserializeIconDatabase(
+                        await File.ReadAllTextAsync(IconsAndScreenshotsFile)
                     );
                 if (JsonData.icons_and_screenshots is not null)
                 {
@@ -131,6 +167,5 @@ namespace UniGetUI.Core.IconEngine
         {
             return __icon_count;
         }
-
     }
 }

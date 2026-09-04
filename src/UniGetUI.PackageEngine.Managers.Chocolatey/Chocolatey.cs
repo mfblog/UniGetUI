@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using System.Runtime.InteropServices;
+using System.Text;
 using UniGetUI.Core.Data;
 using UniGetUI.Core.Logging;
 using UniGetUI.Core.SettingsEngine;
@@ -13,13 +13,80 @@ using UniGetUI.PackageEngine.ManagerClasses.Manager;
 using UniGetUI.PackageEngine.Managers.Choco;
 using UniGetUI.PackageEngine.Managers.PowerShellManager;
 using UniGetUI.PackageEngine.PackageClasses;
+using Architecture = UniGetUI.PackageEngine.Enums.Architecture;
 
 namespace UniGetUI.PackageEngine.Managers.ChocolateyManager
 {
     public class Chocolatey : BaseNuGet
     {
-        public static new string[] FALSE_PACKAGE_IDS = ["Directory", "", "Did", "Features?", "Validation", "-", "being", "It", "Error", "L'accs", "Maximum", "This", "Output is package name ", "operable", "Invalid"];
-        public static new string[] FALSE_PACKAGE_VERSIONS = ["", "of", "Did", "Features?", "Validation", "-", "being", "It", "Error", "L'accs", "Maximum", "This", "packages", "current version", "installed version", "is", "program", "validations", "argument", "no"];
+        // Chocolatey emits its output in the system console code page, not UTF-8.
+        public override Encoding OutputEncoding => CoreData.ConsoleEncoding;
+
+        public static readonly string[] FALSE_PACKAGE_IDS =
+        [
+            "Directory",
+            "Output is Id",
+            "",
+            "Did",
+            "Features?",
+            "Validation",
+            "-",
+            "being",
+            "It",
+            "Error",
+            "L'accs",
+            "Maximum",
+            "This",
+            "Output is package name ",
+            "operable",
+            "Invalid",
+        ];
+        public static readonly string[] FALSE_PACKAGE_VERSIONS =
+        [
+            "",
+            "Version",
+            "of",
+            "Did",
+            "Features?",
+            "Validation",
+            "-",
+            "being",
+            "It",
+            "Error",
+            "L'accs",
+            "Maximum",
+            "This",
+            "packages",
+            "current version",
+            "installed version",
+            "is",
+            "program",
+            "validations",
+            "argument",
+            "no",
+        ];
+        private const string DefaultSystemChocoPath = @"C:\ProgramData\chocolatey\bin\choco.exe";
+        private const string LegacyInstallVariable = "ChocolateyInstall";
+        private static int _inheritedProcessValueSanitized;
+        private static readonly string[] LegacyBundledChocolateyPaths =
+        [
+            Path.Join(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Programs\\WingetUI\\choco-cli"
+            ),
+            Path.Join(CoreData.UniGetUIDataDirectory, "Chocolatey"),
+            Path.Join(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "UniGetUI\\Chocolatey"
+            ),
+            Path.Join(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".wingetui\\Chocolatey"
+            ),
+        ];
+
+        // AttemptFastRepair is a no-op here, so retrying a timed-out choco listing just spawns another (#4974).
+        protected override bool RetryListingTasksOnTimeout => false;
 
         public Chocolatey()
         {
@@ -30,8 +97,9 @@ namespace UniGetUI.PackageEngine.Managers.ChocolateyManager
                 CanSkipIntegrityChecks = true,
                 CanRunInteractively = true,
                 SupportsCustomVersions = true,
+                CanListDependencies = true,
                 SupportsCustomArchitectures = true,
-                SupportedCustomArchitectures = [Architecture.X86],
+                SupportedCustomArchitectures = [Architecture.x86],
                 SupportsPreRelease = true,
                 SupportsCustomSources = true,
                 SupportsCustomPackageIcons = true,
@@ -41,23 +109,36 @@ namespace UniGetUI.PackageEngine.Managers.ChocolateyManager
                     KnowsUpdateDate = false,
                 },
                 SupportsProxy = ProxySupport.Yes,
-                SupportsProxyAuth = true
+                SupportsProxyAuth = true,
+                KnowsPackageReleaseDate = PackageReleaseDateSupport.Yes,
             };
 
             Properties = new ManagerProperties
             {
+                Id = "chocolatey",
                 Name = "Chocolatey",
-                Description = CoreTools.Translate("The classical package manager for windows. You'll find everything there. <br>Contains: <b>General Software</b>"),
+                Description = CoreTools.Translate(
+                    "The classical package manager for windows. You'll find everything there. <br>Contains: <b>General Software</b>"
+                ),
                 IconId = IconType.Chocolatey,
                 ColorIconId = "choco_color",
                 ExecutableFriendlyName = "choco.exe",
                 InstallVerb = "install",
                 UninstallVerb = "uninstall",
                 UpdateVerb = "upgrade",
-                ExecutableCallArgs = "",
-                KnownSources = [new ManagerSource(this, "community", new Uri("https://community.chocolatey.org/api/v2/"))],
-                DefaultSource = new ManagerSource(this, "community", new Uri("https://community.chocolatey.org/api/v2/")),
-
+                KnownSources =
+                [
+                    new ManagerSource(
+                        this,
+                        "community",
+                        new Uri("https://community.chocolatey.org/api/v2/")
+                    ),
+                ],
+                DefaultSource = new ManagerSource(
+                    this,
+                    "community",
+                    new Uri("https://community.chocolatey.org/api/v2/")
+                ),
             };
 
             SourcesHelper = new ChocolateySourceHelper(this);
@@ -67,19 +148,298 @@ namespace UniGetUI.PackageEngine.Managers.ChocolateyManager
 
         public static string GetProxyArgument()
         {
-            if (!Settings.Get("EnableProxy")) return "";
+            if (!Settings.Get(Settings.K.EnableProxy))
+                return "";
             var proxyUri = Settings.GetProxyUrl();
-            if (proxyUri is null) return "";
+            if (proxyUri is null)
+                return "";
 
-            if (Settings.Get("EnableProxyAuth") is false)
+            if (Settings.Get(Settings.K.EnableProxyAuth) is false)
                 return $"--proxy {proxyUri.ToString()}";
 
             var creds = Settings.GetProxyCredentials();
-            if(creds is null)
+            if (creds is null)
                 return $"--proxy {proxyUri.ToString()}";
 
-            return $"--proxy={proxyUri.ToString()} --proxy-user={Uri.EscapeDataString(creds.UserName)}" +
-                   $" --proxy-password={Uri.EscapeDataString(creds.Password)}";
+            return $"--proxy={proxyUri.ToString()} --proxy-user={Uri.EscapeDataString(creds.UserName)}"
+                + $" --proxy-password={Uri.EscapeDataString(creds.Password)}";
+        }
+
+        public static bool HasLegacyBundledInstallation()
+        {
+            foreach (string path in LegacyBundledChocolateyPaths)
+            {
+                if (
+                    File.Exists(Path.Join(path, "choco.exe"))
+                    || File.Exists(Path.Join(path, "bin", "choco.exe"))
+                )
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        protected override void _performPreInitializationSteps()
+        {
+            RemoveStaleLegacyInstallVariable();
+        }
+
+        public static bool IsLegacyBundledChocolateyRoot(string? path)
+        {
+            string? normalized = NormalizeDirectory(path);
+            if (normalized is null)
+            {
+                return false;
+            }
+
+            foreach (string legacyPath in LegacyBundledChocolateyPaths)
+            {
+                string? legacyRoot = NormalizeDirectory(legacyPath);
+                if (legacyRoot is null)
+                {
+                    continue;
+                }
+
+                if (normalized.Equals(legacyRoot, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                if (
+                    normalized.StartsWith(
+                        legacyRoot + Path.DirectorySeparatorChar,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string? NormalizeDirectory(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            try
+            {
+                return Path.TrimEndingDirectorySeparator(
+                    Path.GetFullPath(
+                        Environment.ExpandEnvironmentVariables(path.Trim().Trim('"'))
+                    )
+                );
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        internal readonly record struct LegacyInstallVariablePlan(
+            bool RemoveUserValue,
+            bool ReplaceProcessValue,
+            string? NewProcessValue
+        );
+
+        internal static LegacyInstallVariablePlan PlanStaleLegacyInstallVariableRemoval(
+            string? userValue,
+            string? machineValue,
+            string? processValue
+        )
+        {
+            bool removeUserValue = IsLegacyBundledChocolateyRoot(userValue);
+            string? remainingUserValue = removeUserValue ? null : userValue;
+
+            if (!IsLegacyBundledChocolateyRoot(processValue))
+            {
+                return new LegacyInstallVariablePlan(removeUserValue, false, processValue);
+            }
+
+            string? replacement = null;
+            if (!string.IsNullOrWhiteSpace(remainingUserValue))
+            {
+                replacement = remainingUserValue;
+            }
+            else if (!string.IsNullOrWhiteSpace(machineValue))
+            {
+                replacement = machineValue;
+            }
+
+            if (IsLegacyBundledChocolateyRoot(replacement))
+            {
+                replacement = null;
+            }
+
+            return new LegacyInstallVariablePlan(removeUserValue, true, replacement);
+        }
+
+        internal static void TEST_ResetInheritedProcessValueSanitation()
+        {
+            Interlocked.Exchange(ref _inheritedProcessValueSanitized, 0);
+        }
+
+        internal static void RemoveStaleLegacyInstallVariable()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            try
+            {
+                bool sanitizeInheritedProcessValue =
+                    Interlocked.Exchange(ref _inheritedProcessValueSanitized, 1) == 0;
+
+                string? userValue = Environment.GetEnvironmentVariable(
+                    LegacyInstallVariable,
+                    EnvironmentVariableTarget.User
+                );
+                string? machineValue = Environment.GetEnvironmentVariable(
+                    LegacyInstallVariable,
+                    EnvironmentVariableTarget.Machine
+                );
+                string? processValue = Environment.GetEnvironmentVariable(
+                    LegacyInstallVariable,
+                    EnvironmentVariableTarget.Process
+                );
+
+                LegacyInstallVariablePlan plan = PlanStaleLegacyInstallVariableRemoval(
+                    userValue,
+                    machineValue,
+                    processValue
+                );
+
+                if (plan.RemoveUserValue)
+                {
+                    Logger.ImportantInfo(
+                        $"Removing the stale {LegacyInstallVariable} user environment variable, which "
+                            + $"pointed at the no longer supported bundled Chocolatey path {userValue}"
+                    );
+
+                    Environment.SetEnvironmentVariable(
+                        LegacyInstallVariable,
+                        null,
+                        EnvironmentVariableTarget.User
+                    );
+                }
+
+                if (sanitizeInheritedProcessValue && plan.ReplaceProcessValue)
+                {
+                    Logger.ImportantInfo(
+                        $"Refreshing the inherited {LegacyInstallVariable} process environment "
+                            + $"variable, which pointed at the no longer supported bundled Chocolatey "
+                            + $"path {processValue}, to {plan.NewProcessValue ?? "no value"}"
+                    );
+
+                    Environment.SetEnvironmentVariable(
+                        LegacyInstallVariable,
+                        plan.NewProcessValue,
+                        EnvironmentVariableTarget.Process
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(
+                    $"Could not remove the stale {LegacyInstallVariable} user environment variable"
+                );
+                Logger.Error(ex);
+            }
+        }
+
+        internal IReadOnlyList<Package> ParseAvailableUpdates(IEnumerable<string> lines)
+        {
+            List<Package> packages = [];
+            foreach (string line in lines)
+            {
+                if (line.StartsWith("Chocolatey"))
+                {
+                    continue;
+                }
+
+                string[] elements = line.Split('|');
+                for (int i = 0; i < elements.Length; i++)
+                {
+                    elements[i] = elements[i].Trim();
+                }
+
+                if (elements.Length <= 2)
+                {
+                    continue;
+                }
+
+                if (
+                    FALSE_PACKAGE_IDS.Contains(elements[0])
+                    || FALSE_PACKAGE_VERSIONS.Contains(elements[1])
+                    || elements[1] == elements[2]
+                )
+                {
+                    continue;
+                }
+
+                packages.Add(
+                    new Package(
+                        CoreTools.FormatAsName(elements[0]),
+                        elements[0],
+                        elements[1],
+                        elements[2],
+                        DefaultSource,
+                        this
+                    )
+                );
+            }
+
+            return packages;
+        }
+
+        internal IReadOnlyList<Package> ParseInstalledPackages(IEnumerable<string> lines)
+        {
+            List<Package> packages = [];
+            foreach (string line in lines)
+            {
+                if (line.StartsWith("Chocolatey"))
+                {
+                    continue;
+                }
+
+                string[] elements = line.Split(' ');
+                for (int i = 0; i < elements.Length; i++)
+                {
+                    elements[i] = elements[i].Trim();
+                }
+
+                if (elements.Length <= 1)
+                {
+                    continue;
+                }
+
+                if (
+                    FALSE_PACKAGE_IDS.Contains(elements[0])
+                    || FALSE_PACKAGE_VERSIONS.Contains(elements[1])
+                )
+                {
+                    continue;
+                }
+
+                packages.Add(
+                    new Package(
+                        CoreTools.FormatAsName(elements[0]),
+                        elements[0],
+                        elements[1],
+                        DefaultSource,
+                        this
+                    )
+                );
+            }
+
+            return packages;
         }
 
         protected override IReadOnlyList<Package> GetAvailableUpdates_UnSafe()
@@ -89,51 +449,34 @@ namespace UniGetUI.PackageEngine.Managers.ChocolateyManager
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = Status.ExecutablePath,
-                    Arguments = Properties.ExecutableCallArgs + " outdated " + GetProxyArgument(),
+                    Arguments = Status.ExecutableCallArgs + " outdated " + GetProxyArgument(),
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     RedirectStandardInput = true,
                     UseShellExecute = false,
                     CreateNoWindow = true,
-                    StandardOutputEncoding = System.Text.Encoding.UTF8
-                }
+                    StandardOutputEncoding = OutputEncoding,
+                    StandardErrorEncoding = OutputEncoding,
+                },
             };
 
             IProcessTaskLogger logger = TaskLogger.CreateNew(LoggableTaskType.ListUpdates, p);
             p.Start();
+            RegisterListingProcess(p);
 
             string? line;
-            List<Package> Packages = [];
+            List<string> lines = [];
             while ((line = p.StandardOutput.ReadLine()) is not null)
             {
                 logger.AddToStdOut(line);
-                if (!line.StartsWith("Chocolatey"))
-                {
-                    string[] elements = line.Split('|');
-                    for (int i = 0; i < elements.Length; i++)
-                    {
-                        elements[i] = elements[i].Trim();
-                    }
-
-                    if (elements.Length <= 2)
-                    {
-                        continue;
-                    }
-
-                    if (FALSE_PACKAGE_IDS.Contains(elements[0]) || FALSE_PACKAGE_VERSIONS.Contains(elements[1]) || elements[1] == elements[2])
-                    {
-                        continue;
-                    }
-
-                    Packages.Add(new Package(CoreTools.FormatAsName(elements[0]), elements[0], elements[1], elements[2], DefaultSource, this));
-                }
+                lines.Add(line);
             }
 
             logger.AddToStdErr(p.StandardError.ReadToEnd());
             p.WaitForExit();
             logger.Close(p.ExitCode);
 
-            return Packages;
+            return ParseAvailableUpdates(lines);
         }
 
         protected override IReadOnlyList<Package> _getInstalledPackages_UnSafe()
@@ -143,211 +486,104 @@ namespace UniGetUI.PackageEngine.Managers.ChocolateyManager
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = Status.ExecutablePath,
-                    Arguments = Properties.ExecutableCallArgs + " list " + GetProxyArgument(),
+                    Arguments = Status.ExecutableCallArgs + " list " + GetProxyArgument(),
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     RedirectStandardInput = true,
                     UseShellExecute = false,
                     CreateNoWindow = true,
-                    StandardOutputEncoding = System.Text.Encoding.UTF8
-                }
+                    StandardOutputEncoding = OutputEncoding,
+                    StandardErrorEncoding = OutputEncoding,
+                },
             };
 
-            IProcessTaskLogger logger = TaskLogger.CreateNew(LoggableTaskType.ListInstalledPackages, p);
+            IProcessTaskLogger logger = TaskLogger.CreateNew(
+                LoggableTaskType.ListInstalledPackages,
+                p
+            );
             p.Start();
+            RegisterListingProcess(p);
 
             string? line;
-            List<Package> Packages = [];
+            List<string> lines = [];
             while ((line = p.StandardOutput.ReadLine()) is not null)
             {
                 logger.AddToStdOut(line);
-                if (!line.StartsWith("Chocolatey"))
-                {
-                    string[] elements = line.Split(' ');
-                    for (int i = 0; i < elements.Length; i++)
-                    {
-                        elements[i] = elements[i].Trim();
-                    }
-
-                    if (elements.Length <= 1)
-                    {
-                        continue;
-                    }
-
-                    if (FALSE_PACKAGE_IDS.Contains(elements[0]) || FALSE_PACKAGE_VERSIONS.Contains(elements[1]))
-                    {
-                        continue;
-                    }
-
-                    Packages.Add(new Package(CoreTools.FormatAsName(elements[0]), elements[0], elements[1], DefaultSource, this));
-                }
+                lines.Add(line);
             }
 
             logger.AddToStdErr(p.StandardError.ReadToEnd());
             p.WaitForExit();
             logger.Close(p.ExitCode);
 
-            return Packages;
+            return ParseInstalledPackages(lines);
         }
 
-        protected override ManagerStatus LoadManager()
+        public override IReadOnlyList<string> FindCandidateExecutableFiles()
         {
-            ManagerStatus status = new();
+            List<string> candidates = [];
+            if (File.Exists(DefaultSystemChocoPath))
+            {
+                candidates.Add(DefaultSystemChocoPath);
+            }
 
-            string old_choco_path = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs\\WingetUI\\choco-cli");
-            string new_choco_path = Path.Join(CoreData.UniGetUIDataDirectory, "Chocolatey");
-
-            if (!Directory.Exists(old_choco_path))
+            foreach (string candidate in CoreTools.WhichMultiple("choco.exe"))
             {
-                Logger.Debug("Old chocolatey path does not exist, not migrating Chocolatey");
-            }
-            else if (CoreTools.IsSymbolicLinkDir(old_choco_path))
-            {
-                Logger.ImportantInfo("Old chocolatey path is a symbolic link, not migrating Chocolatey...");
-            }
-            else if (Settings.Get("ChocolateySymbolicLinkCreated"))
-            {
-                Logger.Warn("The Choco path symbolic link has already been set to created!");
-            }
-            else
-            {
-                try
+                if (!candidates.Exists(existing => existing.Equals(candidate, StringComparison.OrdinalIgnoreCase)))
                 {
-                    Logger.Info("Moving Bundled Chocolatey from old path to new path...");
-
-                    string current_env_var =
-                        Environment.GetEnvironmentVariable("chocolateyinstall", EnvironmentVariableTarget.User) ?? "";
-                    if (current_env_var != "" && Path.GetRelativePath(current_env_var, old_choco_path) == ".")
-                    {
-                        Logger.ImportantInfo("Migrating ChocolateyInstall environment variable to new location");
-                        Environment.SetEnvironmentVariable("chocolateyinstall", new_choco_path, EnvironmentVariableTarget.User);
-                    }
-
-                    if (!Directory.Exists(new_choco_path))
-                    {
-                        Directory.CreateDirectory(new_choco_path);
-                    }
-
-                    foreach (string old_subdir in Directory.GetDirectories(old_choco_path, "*", SearchOption.AllDirectories))
-                    {
-                        string new_subdir = old_subdir.Replace(old_choco_path, new_choco_path);
-                        if (!Directory.Exists(new_subdir))
-                        {
-                            Logger.Debug("New directory: " + new_subdir);
-                            Directory.CreateDirectory(new_subdir);
-                        }
-                        else
-                        {
-                            Logger.Debug("Directory " + new_subdir + " already exists");
-                        }
-                    }
-
-                    foreach (string old_file in Directory.GetFiles(old_choco_path, "*", SearchOption.AllDirectories))
-                    {
-                        string new_file = old_file.Replace(old_choco_path, new_choco_path);
-                        if (!File.Exists(new_file))
-                        {
-                            Logger.Info("Copying " + old_file);
-                            File.Move(old_file, new_file);
-                        }
-                        else
-                        {
-                            Logger.Debug("File " + new_file + " already exists.");
-                            File.Delete(old_file);
-                        }
-                    }
-
-                    foreach (string old_subdir in Directory.GetDirectories(old_choco_path, "*", SearchOption.AllDirectories).Reverse())
-                    {
-                        if (!Directory.EnumerateFiles(old_subdir).Any() && !Directory.EnumerateDirectories(old_subdir).Any())
-                        {
-                            Logger.Debug("Deleting old empty subdirectory " + old_subdir);
-                            Directory.Delete(old_subdir);
-                        }
-                    }
-
-                    if (!Directory.EnumerateFiles(old_choco_path).Any() && !Directory.EnumerateDirectories(old_choco_path).Any())
-                    {
-                        Logger.Info("Deleting old Chocolatey directory " + old_choco_path);
-                        Directory.Delete(old_choco_path);
-                    }
-
-                    CoreTools.CreateSymbolicLinkDir(old_choco_path, new_choco_path);
-                    Settings.Set("ChocolateySymbolicLinkCreated", true);
-                    Logger.Info($"Symbolic link created successfully from {old_choco_path} to {new_choco_path}.");
-
-                }
-                catch (Exception e)
-                {
-                    Logger.Error("An error occurred while migrating chocolatey");
-                    Logger.Error(e);
+                    candidates.Add(candidate);
                 }
             }
 
-            if (Settings.Get("UseSystemChocolatey"))
-            {
-                status.ExecutablePath = CoreTools.Which("choco.exe").Item2;
-            }
-            else if (File.Exists(Path.Join(new_choco_path, "choco.exe")))
-            {
-                status.ExecutablePath = Path.Join(new_choco_path, "choco.exe");
-            }
-            else
-            {
-                status.ExecutablePath = Path.Join(CoreData.UniGetUIDataDirectory, "Chocolatey", "choco.exe");
-                if (!File.Exists(status.ExecutablePath)) status.ExecutablePath = "";
-            }
+            return candidates;
+        }
 
-            status.Found = File.Exists(status.ExecutablePath);
+        protected override void _loadManagerExecutableFile(
+            out bool found,
+            out string path,
+            out string callArguments
+        )
+        {
+            var (_found, _path) = GetExecutableFile();
+            found = _found;
+            path = _path;
+            callArguments = "";
+        }
 
-            if (!status.Found)
-            {
-                return status;
-            }
-
-            Process process = new()
+        protected override void _loadManagerVersion(out string version)
+        {
+            using Process process = new()
             {
                 StartInfo = new ProcessStartInfo
                 {
-                    FileName = status.ExecutablePath,
+                    FileName = Status.ExecutablePath,
                     Arguments = "--version " + GetProxyArgument(),
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     CreateNoWindow = true,
-                    StandardOutputEncoding = System.Text.Encoding.UTF8
-                }
+                    StandardOutputEncoding = OutputEncoding,
+                    StandardErrorEncoding = OutputEncoding,
+                },
             };
             process.Start();
-            status.Version = process.StandardOutput.ReadToEnd().Trim();
+            version = process.StandardOutput.ReadToEnd().Trim();
+        }
 
-            // If the user is running bundled chocolatey and chocolatey is not in path, add chocolatey to path
-            if (!Settings.Get("UseSystemChocolatey")
-                && !File.Exists("C:\\ProgramData\\Chocolatey\\bin\\choco.exe"))
-                /* && Settings.Get("ShownWelcomeWizard")) */
-            {
-                string? path = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User);
-                if (!path?.Contains(status.ExecutablePath.Replace("\\choco.exe", "\\bin")) ?? false)
-                {
-                    Logger.ImportantInfo("Adding chocolatey to path since it was not on path.");
-                    Environment.SetEnvironmentVariable("PATH", $"{status.ExecutablePath.Replace("\\choco.exe", "\\bin")};{path}", EnvironmentVariableTarget.User);
-                    Environment.SetEnvironmentVariable("chocolateyinstall", Path.GetDirectoryName(status.ExecutablePath), EnvironmentVariableTarget.User);
-                }
-                else
-                {
-                    Logger.Info("UniGetUI Chocolatey was found in the path");
-                }
-            }
-
-            // Trick chocolatey into using the wanted installation
-            var choco_dir = Path.GetDirectoryName(status.ExecutablePath)?.Replace('/', '\\').Trim('\\') ?? "";
+        protected override void _performExtraLoadingSteps()
+        {
+            // Ensure the selected Chocolatey executable uses a matching installation root.
+            var choco_dir =
+                Path.GetDirectoryName(Status.ExecutablePath)?.Replace('/', '\\').Trim('\\') ?? "";
             if (choco_dir.EndsWith("bin"))
             {
                 choco_dir = choco_dir[..^3].Trim('\\');
             }
-            Environment.SetEnvironmentVariable("chocolateyinstall", choco_dir, EnvironmentVariableTarget.Process);
-
-            return status;
+            Environment.SetEnvironmentVariable(
+                "chocolateyinstall",
+                choco_dir,
+                EnvironmentVariableTarget.Process
+            );
         }
     }
 }

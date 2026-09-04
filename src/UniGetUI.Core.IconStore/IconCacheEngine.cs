@@ -1,6 +1,6 @@
-extern alias DrawingCommon;
 using System.Collections.ObjectModel;
 using System.Security.Cryptography;
+using System.Text;
 using PhotoSauce.MagicScaler;
 using UniGetUI.Core.Classes;
 using UniGetUI.Core.Data;
@@ -14,7 +14,7 @@ namespace UniGetUI.Core.IconEngine
         SHA256,
         FileSize,
         PackageVersion,
-        UriSource
+        UriSource,
     }
 
     public readonly struct CacheableIcon
@@ -38,7 +38,8 @@ namespace UniGetUI.Core.IconEngine
             Url = uri;
             this.SHA256 = Sha256;
             ValidationMethod = IconValidationMethod.SHA256;
-            _hashCode = uri.ToString().GetHashCode() + Sha256[0] + Sha256[1] + Sha256[2] + Sha256[3];
+            _hashCode =
+                uri.ToString().GetHashCode() + Sha256[0] + Sha256[1] + Sha256[2] + Sha256[3];
         }
 
         /// <summary>
@@ -101,21 +102,59 @@ namespace UniGetUI.Core.IconEngine
         /// <param name="PackageId">the Id of the package</param>
         /// <param name="cacheInterval">the Time to store the icons on the TaskRecycler cache</param>
         /// <returns>A path to a local icon file</returns>
-        public static string? GetCacheOrDownloadIcon(CacheableIcon? icon, string ManagerName, string PackageId, int cacheInterval = 30)
-            => TaskRecycler<string?>.RunOrAttach(_getCacheOrDownloadIcon, icon, ManagerName, PackageId, cacheInterval);
+        public static string? GetCacheOrDownloadIcon(
+            CacheableIcon? icon,
+            string ManagerName,
+            string PackageId,
+            int cacheInterval = 30
+        ) =>
+            TaskRecycler<string?>.RunOrAttach(
+                _getCacheOrDownloadIcon,
+                icon,
+                ManagerName,
+                PackageId,
+                cacheInterval
+            );
 
-        private static string? _getCacheOrDownloadIcon(CacheableIcon? _icon, string ManagerName, string PackageId)
+        /// <summary>
+        /// The directory a package's cached icon lives in. The readable components are lossy,
+        /// so a hash of the raw identity keeps distinct packages apart.
+        /// </summary>
+        public static string GetIconCacheDirectory(string managerName, string packageId)
+        {
+            return Path.Join(
+                CoreData.UniGetUICacheDirectory_Icons,
+                CoreTools.MakeValidFileName(managerName),
+                $"{CoreTools.MakeValidFileName(packageId)}_{IdentityHash(managerName, packageId)}"
+            );
+        }
+
+        private static string IdentityHash(string managerName, string packageId)
+        {
+            byte[] digest = SHA256.HashData(
+                Encoding.UTF8.GetBytes(string.Join('\u0000', managerName, packageId))
+            );
+
+            return Convert.ToHexString(digest.AsSpan(0, 8)).ToLowerInvariant();
+        }
+
+        private static string? _getCacheOrDownloadIcon(
+            CacheableIcon? _icon,
+            string ManagerName,
+            string PackageId
+        )
         {
             if (_icon is null)
                 return null;
 
             var icon = _icon.Value;
 
-            if(icon.IsLocalPath)
+            if (icon.IsLocalPath)
                 return icon.LocalPath;
 
-            string iconLocation = Path.Join(CoreData.UniGetUICacheDirectory_Icons, ManagerName, PackageId);
-            if (!Directory.Exists(iconLocation)) Directory.CreateDirectory(iconLocation);
+            string iconLocation = GetIconCacheDirectory(ManagerName, PackageId);
+            if (!Directory.Exists(iconLocation))
+                Directory.CreateDirectory(iconLocation);
             string iconVersionFile = Path.Join(iconLocation, $"icon.version");
             string iconUriFile = Path.Join(iconLocation, $"icon.uri");
 
@@ -123,8 +162,8 @@ namespace UniGetUI.Core.IconEngine
             string? cachedIconFile = GetLocalCachedFile(icon, iconLocation);
 
             bool isLocalCacheValid = // Verify if the cached icon exists and is valid
-                cachedIconFile is not null &&
-                icon.ValidationMethod switch
+                cachedIconFile is not null
+                && icon.ValidationMethod switch
                 {
                     IconValidationMethod.FileSize => ValidateByImageSize(icon, cachedIconFile),
                     IconValidationMethod.SHA256 => ValidateBySHA256(icon, cachedIconFile),
@@ -136,12 +175,16 @@ namespace UniGetUI.Core.IconEngine
             // If a valid cache was found, return that cache
             if (isLocalCacheValid)
             {
-                Logger.Debug($"Cached icon for id={PackageId} is valid and won't be downloaded again ({icon.ValidationMethod})");
+                Logger.Debug(
+                    $"Cached icon for id={PackageId} is valid and won't be downloaded again ({icon.ValidationMethod})"
+                );
                 return cachedIconFile;
             }
 
             if (cachedIconFile is not null)
-                Logger.ImportantInfo($"Cached icon for id={PackageId} is INVALID ({icon.ValidationMethod})");
+                Logger.ImportantInfo(
+                    $"Cached icon for id={PackageId} is INVALID ({icon.ValidationMethod})"
+                );
 
             return SaveIconToCacheAndGetPath(icon, iconLocation);
         }
@@ -164,10 +207,16 @@ namespace UniGetUI.Core.IconEngine
 
             string iconVersionFile = Path.Join(iconLocation, $"icon.version");
             string iconUriFile = Path.Join(iconLocation, $"icon.uri");
-            if (icon.ValidationMethod is IconValidationMethod.PackageVersion && !File.Exists(iconVersionFile))
+            if (
+                icon.ValidationMethod is IconValidationMethod.PackageVersion
+                && !File.Exists(iconVersionFile)
+            )
                 return null; // If version file does not exist and icon is versioned
 
-            if (icon.ValidationMethod is IconValidationMethod.UriSource && !File.Exists(iconUriFile))
+            if (
+                icon.ValidationMethod is IconValidationMethod.UriSource
+                && !File.Exists(iconUriFile)
+            )
                 return null; // If uri file does not exist and icon is versioned
 
             return cachedIconFile;
@@ -175,112 +224,139 @@ namespace UniGetUI.Core.IconEngine
 
         private static string? SaveIconToCacheAndGetPath(CacheableIcon icon, string iconLocation)
         {
-            string iconVersionFile = Path.Join(iconLocation, $"icon.version");
-            string iconUriFile = Path.Join(iconLocation, $"icon.uri");
-
-            // If the cache is determined to NOT be valid, delete cache
-            DeteteCachedFiles(iconLocation);
-
-            // After discarding the cache, regenerate it
-            using HttpClient client = new(CoreTools.GenericHttpClientParameters);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd(CoreData.UserAgentString);
-            HttpResponseMessage response = client.GetAsync(icon.Url).GetAwaiter().GetResult();
-            if (!response.IsSuccessStatusCode)
+            try
             {
-                Logger.Warn($"Icon download attempt at {icon.Url} failed with code {response.StatusCode}");
-                return null;
-            }
+                string iconVersionFile = Path.Join(iconLocation, $"icon.version");
+                string iconUriFile = Path.Join(iconLocation, $"icon.uri");
 
-            string mimeType = response.Content.Headers.GetValues("Content-Type").First();
-            if (!MimeToExtension.TryGetValue(mimeType, out string? extension))
-            {
-                Logger.Warn($"Unknown mimetype {mimeType} for icon {icon.Url}, aborting download");
-                return null;
-            }
+                // If the cache is determined to NOT be valid, delete cache
+                DeteteCachedFiles(iconLocation);
 
-            string cachedIconFile = Path.Join(iconLocation, $"icon.{extension}");
-            string iconFileMime = Path.Join(iconLocation, $"icon.mime");
-            File.WriteAllText(iconFileMime, mimeType);
+                // After discarding the cache, regenerate it
+                using HttpClient client = new(CoreTools.GenericHttpClientParameters);
+                client.DefaultRequestHeaders.UserAgent.ParseAdd(CoreData.UserAgentString);
 
-            using (Stream stream = response.Content.ReadAsStream())
-            using (FileStream fileStream = File.Create(cachedIconFile))
-            {
-                stream.CopyTo(fileStream);
-            }
-
-            if (icon.ValidationMethod is IconValidationMethod.PackageVersion)
-                File.WriteAllText(iconVersionFile, icon.Version);
-
-            if (icon.ValidationMethod is IconValidationMethod.UriSource)
-                File.WriteAllText(iconUriFile, icon.Url.ToString());
-
-            // Ensure the new icon has been properly downloaded
-            bool isNewCacheValid = icon.ValidationMethod switch
-            {
-                IconValidationMethod.FileSize => ValidateByImageSize(icon, cachedIconFile),
-                IconValidationMethod.SHA256 => ValidateBySHA256(icon, cachedIconFile),
-                IconValidationMethod.PackageVersion => true, // The validation result would be always true
-                IconValidationMethod.UriSource => true, // The validation result would be always true
-                _ => throw new InvalidDataException("Invalid icon validation method"),
-            };
-
-            if (isNewCacheValid)
-            {
-                if (icon.ValidationMethod is IconValidationMethod.PackageVersion or IconValidationMethod.UriSource
-                    && new[] { "png", "webp", "tif", "avif" }.Contains(extension))
+                using var request = new HttpRequestMessage(HttpMethod.Get, icon.Url);
+                using HttpResponseMessage response = client.Send(request);
+                if (!response.IsSuccessStatusCode)
                 {
-                    DownsizeImage(cachedIconFile, extension);
+                    Logger.Warn(
+                        $"Icon download attempt at {icon.Url} failed with code {response.StatusCode}"
+                    );
+                    return null;
                 }
 
-                Logger.Debug($"Icon for Location={iconLocation} has been downloaded and verified properly (if applicable) ({icon.ValidationMethod})");
-                return cachedIconFile;
-            }
+                string mimeType = response.Content.Headers.GetValues("Content-Type").First();
+                if (!MimeToExtension.TryGetValue(mimeType, out string? extension))
+                {
+                    Logger.Warn(
+                        $"Unknown mimetype {mimeType} for icon {icon.Url}, aborting download"
+                    );
+                    return null;
+                }
 
-            Logger.Warn($"NEWLY DOWNLOADED Icon for Location={iconLocation} Uri={icon.Url} is NOT VALID and will be discarded (verification method is {icon.ValidationMethod})");
-            DeteteCachedFiles(iconLocation);
-            return null;
+                string cachedIconFile = Path.Join(iconLocation, $"icon.{extension}");
+                string iconFileMime = Path.Join(iconLocation, $"icon.mime");
+                File.WriteAllText(iconFileMime, mimeType);
+
+                using (Stream stream = response.Content.ReadAsStream())
+                using (FileStream fileStream = File.Create(cachedIconFile))
+                {
+                    stream.CopyTo(fileStream);
+                }
+
+                if (icon.ValidationMethod is IconValidationMethod.PackageVersion)
+                    File.WriteAllText(iconVersionFile, icon.Version);
+
+                if (icon.ValidationMethod is IconValidationMethod.UriSource)
+                    File.WriteAllText(iconUriFile, icon.Url.ToString());
+
+                // Ensure the new icon has been properly downloaded
+                bool isNewCacheValid = icon.ValidationMethod switch
+                {
+                    IconValidationMethod.FileSize => ValidateByImageSize(icon, cachedIconFile),
+                    IconValidationMethod.SHA256 => ValidateBySHA256(icon, cachedIconFile),
+                    IconValidationMethod.PackageVersion => true, // The validation result would be always true
+                    IconValidationMethod.UriSource => true, // The validation result would be always true
+                    _ => throw new InvalidDataException("Invalid icon validation method"),
+                };
+
+                if (isNewCacheValid)
+                {
+                    if (
+                        icon.ValidationMethod
+                            is IconValidationMethod.PackageVersion
+                                or IconValidationMethod.UriSource
+                        && new[] { "png", "webp", "tif", "avif" }.Contains(extension)
+                    )
+                    {
+                        DownsizeImage(cachedIconFile);
+                    }
+
+                    Logger.Debug(
+                        $"Icon for Location={iconLocation} has been downloaded and verified properly (if applicable) ({icon.ValidationMethod})"
+                    );
+                    return cachedIconFile;
+                }
+
+                Logger.Warn(
+                    $"NEWLY DOWNLOADED Icon for Location={iconLocation} Uri={icon.Url} is NOT VALID and will be discarded (verification method is {icon.ValidationMethod})"
+                );
+                DeteteCachedFiles(iconLocation);
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex);
+                return null;
+            }
         }
 
         /// <summary>
         /// The given image will be downsized to the expected size of an icon, if required
         /// </summary>
-        private static void DownsizeImage(string cachedIconFile, string extension)
-        {   // Yes, the extension parameter could be extracted from cachedIconFile
+        private static void DownsizeImage(string cachedIconFile)
+        {
             try
             {
                 const int MAX_SIDE = 192;
-                int width, height;
-
-                using (var fileStream = new FileStream(cachedIconFile, FileMode.Open, FileAccess.Read, FileShare.Read))
-                using (var image = DrawingCommon.System.Drawing.Image.FromStream(fileStream, false, false))
-                {
-                    height = image.Height;
-                    width = image.Width;
-                }
+                ImageFileInfo imageInfo = ImageFileInfo.Load(cachedIconFile);
+                ImageFileInfo.FrameInfo frameInfo = imageInfo.Frames[0];
+                int width = frameInfo.Width;
+                int height = frameInfo.Height;
 
                 // Calculate target size for the icon to be at max 192x192.
                 if (width > MAX_SIDE || height > MAX_SIDE)
                 {
                     File.Move(cachedIconFile, $"{cachedIconFile}.copy");
-                    var image = MagicImageProcessor.BuildPipeline($"{cachedIconFile}.copy", new ProcessImageSettings
+                    using (
+                        var image = MagicImageProcessor.BuildPipeline(
+                            $"{cachedIconFile}.copy",
+                            new ProcessImageSettings
+                            {
+                                Width = MAX_SIDE,
+                                Height = MAX_SIDE,
+                                ResizeMode = CropScaleMode.Contain,
+                            }
+                        )
+                    )
                     {
-                        Width = MAX_SIDE,
-                        Height = MAX_SIDE,
-                        ResizeMode = CropScaleMode.Contain,
-                    });
-
-                    // Apply changes and save the image to disk
-                    using (FileStream fileStream = File.Create(cachedIconFile))
-                    {
-                        image.WriteOutput(fileStream);
+                        // Apply changes and save the image to disk
+                        using (FileStream fileStream = File.Create(cachedIconFile))
+                        {
+                            image.WriteOutput(fileStream);
+                        }
+                        Logger.Debug(
+                            $"File {cachedIconFile} was downsized from {width}x{height} to {image.Settings.Width}x{image.Settings.Height}"
+                        );
                     }
-                    Logger.Debug($"File {cachedIconFile} was downsized from {width}x{height} to {image.Settings.Width}x{image.Settings.Height}");
-                    image.Dispose();
                     File.Delete($"{cachedIconFile}.copy");
                 }
                 else
                 {
-                    Logger.Debug($"File {cachedIconFile} had an already appropiate size of {width}x{height}");
+                    Logger.Debug(
+                        $"File {cachedIconFile} had an already appropiate size of {width}x{height}"
+                    );
                 }
             }
             catch (Exception ex)
@@ -302,7 +378,9 @@ namespace UniGetUI.Core.IconEngine
             }
             catch (Exception e)
             {
-                Logger.Warn($"Failed to verify icon file size for {icon.Url} via FileSize with error {e.Message}");
+                Logger.Warn(
+                    $"Failed to verify icon file size for {icon.Url} via FileSize with error {e.Message}"
+                );
                 return false;
             }
         }
@@ -320,7 +398,9 @@ namespace UniGetUI.Core.IconEngine
             }
             catch (Exception e)
             {
-                Logger.Warn($"Failed to verify icon file size for {icon.Url} via Sha256 with error {e.Message}");
+                Logger.Warn(
+                    $"Failed to verify icon file size for {icon.Url} via Sha256 with error {e.Message}"
+                );
                 return false;
             }
         }
@@ -332,11 +412,15 @@ namespace UniGetUI.Core.IconEngine
         {
             try
             {
-                return File.Exists(versionPath) && CoreTools.VersionStringToStruct(File.ReadAllText(versionPath)) >= CoreTools.VersionStringToStruct(icon.Version);
+                return File.Exists(versionPath)
+                    && CoreTools.VersionStringToStruct(File.ReadAllText(versionPath))
+                        >= CoreTools.VersionStringToStruct(icon.Version);
             }
             catch (Exception e)
             {
-                Logger.Warn($"Failed to verify icon file size for {icon.Url} via PackageVersion with error {e.Message}");
+                Logger.Warn(
+                    $"Failed to verify icon file size for {icon.Url} via PackageVersion with error {e.Message}"
+                );
                 return false;
             }
         }
@@ -352,7 +436,9 @@ namespace UniGetUI.Core.IconEngine
             }
             catch (Exception e)
             {
-                Logger.Warn($"Failed to verify icon file size for {icon.Url} via UriSource with error {e.Message}");
+                Logger.Warn(
+                    $"Failed to verify icon file size for {icon.Url} via UriSource with error {e.Message}"
+                );
                 return false;
             }
         }
@@ -375,32 +461,38 @@ namespace UniGetUI.Core.IconEngine
             }
         }
 
-        public static readonly ReadOnlyDictionary<string, string> MimeToExtension = new ReadOnlyDictionary<string, string>(new Dictionary<string, string>
-        {
-            {"image/avif", "avif"},
-            {"image/gif", "gif"},
-         // {"image/bmp", "bmp"}, Should non-transparent types be allowed?
-         // {"image/jpeg", "jpg"},
-            {"image/png", "png"},
-            {"image/webp", "webp"},
-            {"image/svg+xml", "svg"},
-            {"image/vnd.microsoft.icon", "ico"},
-            {"application/octet-stream", "ico"},
-            {"image/image/x-icon", "ico"},
-            {"image/tiff", "tif"},
-        });
+        public static readonly ReadOnlyDictionary<string, string> MimeToExtension =
+            new ReadOnlyDictionary<string, string>(
+                new Dictionary<string, string>
+                {
+                    { "image/avif", "avif" },
+                    { "image/gif", "gif" },
+                    // {"image/bmp", "bmp"}, Should non-transparent types be allowed?
+                    // {"image/jpeg", "jpg"},
+                    { "image/png", "png" },
+                    { "image/webp", "webp" },
+                    { "image/svg+xml", "svg" },
+                    { "image/vnd.microsoft.icon", "ico" },
+                    { "application/octet-stream", "ico" },
+                    { "image/x-icon", "ico" },
+                    { "image/tiff", "tif" },
+                }
+            );
 
-        public static readonly ReadOnlyDictionary<string, string> ExtensionToMime = new ReadOnlyDictionary<string, string>(new Dictionary<string, string>
-        {
-            {"avif", "image/avif"},
-            {"gif", "image/gif"},
-         // {"bmp", "image/bmp"}, Should non-transparent types be allowed
-         // {"jpg", "image/jpeg"},
-            {"png", "image/png"},
-            {"webp", "image/webp"},
-            {"svg", "image/svg+xml"},
-            {"ico", "image/image/x-icon"},
-            {"tif", "image/tiff"},
-        });
+        public static readonly ReadOnlyDictionary<string, string> ExtensionToMime =
+            new ReadOnlyDictionary<string, string>(
+                new Dictionary<string, string>
+                {
+                    { "avif", "image/avif" },
+                    { "gif", "image/gif" },
+                    // {"bmp", "image/bmp"}, Should non-transparent types be allowed
+                    // {"jpg", "image/jpeg"},
+                    { "png", "image/png" },
+                    { "webp", "image/webp" },
+                    { "svg", "image/svg+xml" },
+                    { "ico", "image/x-icon" },
+                    { "tif", "image/tiff" },
+                }
+            );
     }
 }

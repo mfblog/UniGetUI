@@ -1,105 +1,182 @@
-# <img src="https://raw.githubusercontent.com/marticliment/UniGetUI/main/media/icon.png" height="40">UniGetUI (formerly WingetUI)
+# WARNING: **wingetui<sub>•</sub>com** and **unigetui<sub>•</sub>com** are fake websites hosted by a third-party. please do NOT trust them
+<br>
 
-[![Downloads@latest](https://img.shields.io/github/downloads/marticliment/UniGetUI/3.1.6/total?style=for-the-badge)](https://github.com/marticliment/UniGetUI/releases/latest/download/UniGetUI.Installer.exe)
-[![Release Version Badge](https://img.shields.io/github/v/release/marticliment/UniGetUI?style=for-the-badge)](https://github.com/marticliment/UniGetUI/releases)
-[![Issues Badge](https://img.shields.io/github/issues/marticliment/UniGetUI?style=for-the-badge)](https://github.com/marticliment/UniGetUI/issues)
-[![Closed Issues Badge](https://img.shields.io/github/issues-closed/marticliment/UniGetUI?color=%238256d0&style=for-the-badge)](https://github.com/marticliment/UniGetUI/issues?q=is%3Aissue+is%3Aclosed)<br>
-The main goal of this project is to create an intuitive GUI for the most common CLI package managers for Windows 10 and 11, such as [WinGet](https://learn.microsoft.com/en-us/windows/package-manager/), [Scoop](https://scoop.sh/), [Chocolatey](https://chocolatey.org/), [Pip](https://pypi.org/), [Npm](https://www.npmjs.com/), [.NET Tool](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-tool-install), [PowerShell Gallery](https://www.powershellgallery.com/) and more (Check out the package manager compatibility table)!.
-With this app, you can easily download, install, update, and uninstall any software published on the supported package managers — and much more!
+## <img src="media/icon.png" height="40">Devolutions UniGetUI
 
-Check out the [Supported Package Managers Table](#supported-package-managers) for more details!
+> [!IMPORTANT]
+> **Major announcement:** UniGetUI has entered its next chapter with Devolutions.
+> Read the [blog post](https://devolutions.net/blog/2026/03/unigetui-enters-its-next-chapter-with-devolutions/) and the [official press release](https://www.globenewswire.com/news-release/2026/03/10/3253012/0/en/Devolutions-Acquires-UniGetUI-Strengthening-Security-and-Enterprise-Readiness.html).
 
-**Disclaimer:** This project has no connection with any supported package managers — it's completely unofficial. Be aware that I, the developer of UniGetUI, am NOT responsible for the downloaded software. Proceed with caution
+[![Downloads](https://img.shields.io/github/downloads/Devolutions/UniGetUI/total?style=for-the-badge)](https://github.com/Devolutions/UniGetUI/releases/latest)
+[![Release Version Badge](https://img.shields.io/github/v/release/Devolutions/UniGetUI?style=for-the-badge)](https://github.com/Devolutions/UniGetUI/releases)
+[![Issues Badge](https://img.shields.io/github/issues/Devolutions/UniGetUI?style=for-the-badge)](https://github.com/Devolutions/UniGetUI/issues)
+[![Closed Issues Badge](https://img.shields.io/github/issues-closed/Devolutions/UniGetUI?color=%238256d0&style=for-the-badge)](https://github.com/Devolutions/UniGetUI/issues?q=is%3Aissue+is%3Aclosed)<br>
+UniGetUI is a Windows-first, intuitive GUI for the most common CLI package managers on Windows 10 and 11. Cross-platform builds are also available for macOS and Linux, with support for package managers including [WinGet](https://learn.microsoft.com/en-us/windows/package-manager/), [Scoop](https://scoop.sh/), [Chocolatey](https://chocolatey.org/), [Homebrew](https://brew.sh/), [APT](https://wiki.debian.org/Apt), [DNF](https://dnf.readthedocs.io/), [Pacman](https://wiki.archlinux.org/title/Pacman), [Flatpak](https://flatpak.org/), [Snap](https://snapcraft.io/), [pip](https://pypi.org/), [npm](https://www.npmjs.com/), [Bun](https://bun.sh/), [.NET Tool](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-tool-install), [PowerShell Gallery](https://www.powershellgallery.com/), and more.
+With UniGetUI, you can discover, install, update, and uninstall software from multiple package managers through one interface.
 
-![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/marticliment/WingetUI/dotnet-test.yml?branch=main&style=for-the-badge&label=Tests)<br>
+![image](media/UniGetUI-Image.png)
+View more screenshots [here](#screenshots)
+
+Check out the [Package Managers](#package-managers) section for more details!
+
+**Disclaimer:** UniGetUI is not affiliated with the package managers it integrates with. Packages are provided by third parties, so review sources and publishers before installation.
+
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/Devolutions/UniGetUI/dotnet-test.yml?branch=main&style=for-the-badge&label=Tests)<br>
 
 
 > [!CAUTION]
-> **The OFFICIAL website for UniGetUI is [https://www.marticliment.com/unigetui/](https://www.marticliment.com/unigetui/)**<br>
+> **The official website for UniGetUI is [https://devolutions.net/unigetui/](https://devolutions.net/unigetui/).**<br>
+> **The official source repository is [https://github.com/Devolutions/UniGetUI](https://github.com/Devolutions/UniGetUI).**<br>
 > **Any other website should be considered unofficial, despite what they may say.**
 
+🔒 Found a security issue? Please report it via the [Devolutions security page](https://devolutions.net/security/)
 
+## Project stewardship
 
-## Support the developer
+UniGetUI was created by Martí Climent and is now maintained by Devolutions. The project remains free, open source, and MIT-licensed. Devolutions' stewardship brings long-term investment, structured governance, stronger security processes, and a roadmap for broader enterprise readiness while keeping UniGetUI standalone and community-driven.
 
-It really does make a big difference, and is very much appreciated. Thanks :)<br>
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/P5P86KKPB)
+Read more in the [Devolutions announcement](https://devolutions.net/blog/2026/03/unigetui-enters-its-next-chapter-with-devolutions/) and the [official press release](https://www.globenewswire.com/news-release/2026/03/10/3253012/0/en/Devolutions-Acquires-UniGetUI-Strengthening-Security-and-Enterprise-Readiness.html).
 
 ## Table of contents
- - **[UniGetUI Homepage](https://www.marticliment.com/unigetui/)**
+ - **[UniGetUI Homepage](https://devolutions.net/unigetui/)**
  - [Table of contents](#table-of-contents)
  - [Installation](#installation)
- - [Update UniGetUI](#update-UniGetUI)
- - [Support the developer](#support-the-developer)
+ - [Update UniGetUI](#update-unigetui)
+ - [Project stewardship](#project-stewardship)
  - [Features](#features)
-   - [Supported Package Managers](#supported-package-managers)
- - [Translating UniGetUI](#translating-UniGetUI-to-other-languages)
-   - [Currently supported languages](#currently-supported-languages)
- - [Contributors](#contributors)
+ - [Package Managers](#package-managers)
+ - [Translations](#translations)
+ - [Contributions](#contributions)
  - [Screenshots](#screenshots)
  - [Frequently Asked Questions](#frequently-asked-questions)
- - [Command-line Arguments](https://github.com/marticliment/UniGetUI/blob/main/cli-arguments.md)
-
-
-<a href="https://hellogithub.com/repository/46bec642537f449a857215e39a1d64ae" target="_blank"><img src="https://abroad.hellogithub.com/v1/widgets/recommend.svg?rid=46bec642537f449a857215e39a1d64ae&claim_uid=u6sFoX4hC2HztbD&theme=small" alt="Featured｜HelloGitHub" /></a>
+ - [CLI reference](docs/CLI.md)
+ - [IPC reference](docs/IPC.md)
+ - [Portable mode](docs/PORTABLE.md)
 
 ## Installation
 <p>There are multiple ways to install UniGetUI — choose whichever one you prefer!</p>
- 
-### Microsoft Store installation (recommended)
-<a href="https://apps.microsoft.com/detail/xpfftq032ptphf"><img alt="alt_text" width="240px" src="https://get.microsoft.com/images/en-us%20dark.svg" /></a> 
 
- 
-### Download UniGetUI installer:
-![GitHub Release](https://img.shields.io/github/v/release/marticliment/UniGetUI?style=for-the-badge)
-<p align="left"><b><a href="https://github.com/marticliment/UniGetUI/releases/latest/download/WingetUI.Installer.exe">Click here to download UniGetUI</a></b></p>
+### Windows
 
+UniGetUI is primarily built for Windows. The Microsoft Store is the recommended installation method, but direct installer and package-manager options are also available.
 
-### Install UniGetUI via WinGet:
-![WinGet Package Version](https://img.shields.io/winget/v/MartiCliment.UniGetUI?style=for-the-badge)
+#### Microsoft Store installation (recommended)
+<a href="https://apps.microsoft.com/detail/xpfftq032ptphf"><img alt="alt_text" width="240px" src="https://get.microsoft.com/images/en-us%20dark.svg" /></a>
+
+#### Download the Windows installer:
+![GitHub Release](https://img.shields.io/github/v/release/Devolutions/UniGetUI?style=for-the-badge)
+Use the installer for the best Windows experience. `UniGetUI.Installer.exe` is the legacy/default x64 installer alias; use the explicit architecture downloads if needed.
+
+The `.zip` is portable: it keeps settings and caches next to the executable rather than in your user profile. See [docs/PORTABLE.md](docs/PORTABLE.md).
+
+| Architecture | Installer | Portable `.zip` |
+|---|---|---|
+| x64 | [UniGetUI.Installer.x64.exe](https://github.com/Devolutions/UniGetUI/releases/latest/download/UniGetUI.Installer.x64.exe) ([default x64 alias](https://github.com/Devolutions/UniGetUI/releases/latest/download/UniGetUI.Installer.exe)) | [UniGetUI.x64.zip](https://github.com/Devolutions/UniGetUI/releases/latest/download/UniGetUI.x64.zip) |
+| arm64 | [UniGetUI.Installer.arm64.exe](https://github.com/Devolutions/UniGetUI/releases/latest/download/UniGetUI.Installer.arm64.exe) | [UniGetUI.arm64.zip](https://github.com/Devolutions/UniGetUI/releases/latest/download/UniGetUI.arm64.zip) |
+
+#### Install via WinGet:
+![WinGet Package Version](https://img.shields.io/winget/v/Devolutions.UniGetUI?style=for-the-badge)
 ```cmd
-winget install --exact --id MartiCliment.UniGetUI --source winget
+winget install --exact --id Devolutions.UniGetUI --source winget
 ```
 
 
-### Install UniGetUI via Scoop:
+#### Install via Scoop:
 ![Scoop version](https://img.shields.io/scoop/v/unigetui?bucket=extras&style=for-the-badge)
 ```cmd
 scoop bucket add extras
 scoop install extras/unigetui
 ```
 
-### Install UniGetUI via Chocolatey:
-![Chocolatey Version](https://img.shields.io/chocolatey/v/wingetui?style=for-the-badge)
+#### Install via Chocolatey:
+![Chocolatey Version](https://img.shields.io/chocolatey/v/unigetui?style=for-the-badge)
 ```cmd
-choco install wingetui
+choco install unigetui
 ```
+
+### NativeAOT builds
+
+Release packages are compiled with NativeAOT on all supported platforms (Windows, macOS, and Linux) for improved startup performance and a reduced attack surface. If you want to build the same configuration locally, the repository includes helper publish profiles and a script:
+
+```powershell
+pwsh ./scripts/publish-nativeaot.ps1 -Platform x64   # or arm64
+```
+
+This publishes `src/UniGetUI.Avalonia/UniGetUI.Avalonia.csproj` as a self-contained NativeAOT build into `artifacts/nativeaot/win-<platform>/`.
+
+### macOS
+
+macOS builds are available from GitHub Releases. Use the `.dmg` for the standard installer experience, or the `.tar.gz` archive for a portable app bundle.
+
+| Architecture | `.dmg` | `.tar.gz` |
+|---|---|---|
+| Apple silicon (arm64) | [UniGetUI.macos-arm64.dmg](https://github.com/Devolutions/UniGetUI/releases/latest/download/UniGetUI.macos-arm64.dmg) | [UniGetUI.macos-arm64.tar.gz](https://github.com/Devolutions/UniGetUI/releases/latest/download/UniGetUI.macos-arm64.tar.gz) |
+| Intel (x64) | [UniGetUI.macos-x64.dmg](https://github.com/Devolutions/UniGetUI/releases/latest/download/UniGetUI.macos-x64.dmg) | [UniGetUI.macos-x64.tar.gz](https://github.com/Devolutions/UniGetUI/releases/latest/download/UniGetUI.macos-x64.tar.gz) |
+
+### Linux
+
+Linux builds are available from GitHub Releases. Use the `.deb` package for Debian/Ubuntu-based distributions, the `.rpm` package for Fedora/RHEL-based distributions, or the `.tar.gz` archive for a portable build.
+
+The binaries require **glibc 2.27 or newer** (Ubuntu 18.04+, Debian 10+, RHEL 8+, Fedora 28+). On older distributions the app exits at startup with a `version 'GLIBC_x.y' not found` message.
+
+| Architecture | `.deb` | `.rpm` | `.tar.gz` |
+|---|---|---|---|
+| x64 | [Download](https://github.com/Devolutions/UniGetUI/releases/latest/download/UniGetUI.linux-x64.deb) | [Download](https://github.com/Devolutions/UniGetUI/releases/latest/download/UniGetUI.linux-x64.rpm) | [Download](https://github.com/Devolutions/UniGetUI/releases/latest/download/UniGetUI.linux-x64.tar.gz) |
+| arm64 | [Download](https://github.com/Devolutions/UniGetUI/releases/latest/download/UniGetUI.linux-arm64.deb) | [Download](https://github.com/Devolutions/UniGetUI/releases/latest/download/UniGetUI.linux-arm64.rpm) | [Download](https://github.com/Devolutions/UniGetUI/releases/latest/download/UniGetUI.linux-arm64.tar.gz) |
+
+Install the package that matches your distribution and architecture:
+
+```bash
+# Debian/Ubuntu-based distributions
+sudo apt install ./UniGetUI.linux-x64.deb
+
+# Fedora/RHEL-based distributions
+sudo dnf install ./UniGetUI.linux-x64.rpm
+
+# Portable archive
+tar -xzf UniGetUI.linux-x64.tar.gz
+./UniGetUI
+```
+
+Replace `x64` with `arm64` in the file name when using the arm64 build.
+
+
+### Portable installations
+
+The `.zip` and `.tar.gz` downloads are portable in the sense that they need no installer, but they still store settings in your user profile. To make UniGetUI keep its data alongside the executable — and for the Windows installer's portable installation type — see [portable mode](docs/PORTABLE.md).
 
 
 ## Update UniGetUI
 
-UniGetUI has a built-in autoupdater. However, it can also be updated like any other package within UniGetUI (since UniGetUI is available from WinGet, Scoop and Chocolatey).
+UniGetUI has a built-in autoupdater. On Windows, it can also be updated like any other package within UniGetUI when installed through WinGet, Scoop, or Chocolatey.
 
 
 ## Features
 
- - Install, update, and remove software from your system easily at one click: UniGetUI combines the packages from the most used package managers for windows: Winget, Chocolatey, Scoop, Pip, Npm and .NET Tool.
+ - Install, update, and remove software from your system easily at one click: UniGetUI combines packages from the most used package managers for your platform, including WinGet, Chocolatey, Scoop, Homebrew, APT, DNF, Pacman, Flatpak, Snap, Pip, npm, Bun, and .NET Tool.
  - Discover new packages and filter them to easily find the package you want.
  - View detailed metadata about any package before installing it. Get the direct download URL or the name of the publisher, as well as the size of the download.
  - Easily bulk-install, update, or uninstall multiple packages at once selecting multiple packages before performing an operation
- - Automatically update packages, or be notified when updates become available. Skip versions or completely ignore updates on a per-package basis.
- - Manage your available updates at the touch of a button from the **Widgets pane** or from **Dev Home** pane with [Widgets for UniGetUI](https://apps.microsoft.com/detail/9NB9M5KZ8SLX)*.
- - The system tray icon will also show the available updates and installed packages, to efficiently update a program or remove a package from your system.
- - Easily customize how and where packages are installed. Select different installation options and switches for each package. Install an older version or force to install a 32 bit architecture. \[But don't worry, those options will be saved for future updates for this package*]
- - Share packages with your friends to show them off that program you found. Here is an example: [Hey \@friend, Check out this program!](https://marticliment.com/unigetui/share/?pname=Google%20Chrome&pid=Google.Chrome&psource=Winget:%20winget)
+ - Automatically update packages, or be notified when updates become available. Skip versions or completely ignore updates on a per-package basis, or restrict automatic updating to a hand-picked set of packages.
+ - Schedule maintenance, with the triggers each task supports: update checks on an interval or daily/weekly at a chosen time, update installation after every update check or daily/weekly, and local or cloud backups at app start or daily/weekly.
+ - The system tray icon will also show the available updates and installed packages where supported, to efficiently update a program or remove a package from your system.
+ - Easily customize how and where packages are installed. Select different installation options and switches for each package. Install an older version or force a specific architecture where supported. \[But don't worry, those options will be saved for future updates for this package*]
+ - Share packages with your friends using generated package links.
  - Export custom lists of packages to then import them to another machine and install those packages with previously specified, custom installation parameters. Setting up machines or configuring a specific software setup has never been easier.
- - Backup your packages to a local file to easily recover your setup in a matter of seconds when migrating to a new machine*
+ - Backup your packages to a local file to easily recover your setup in a matter of seconds when migrating to a new machine*. By default, each backup overwrites the previous file; enable timestamped file names to keep separate backups, and optionally choose a retention limit to keep only the most recent ones.
+ - Sync those backups to a secret GitHub Gist, so a new machine can restore your package list after a single sign-in.
+- Review the 1,000 most recent operations in the operation history, with up to 5,000 log lines per operation kept for troubleshooting.
+ - On Windows, decide which desktop and Start Menu shortcuts installers are allowed to create, and pin a package's shortcuts to a Start Menu folder of your choosing — both re-applied on every upgrade.
+ - Drive the whole application from the command line, or from scripts through its local automation API. See the [CLI reference](docs/CLI.md) and the [IPC reference](docs/IPC.md).
+ - Run UniGetUI as a portable app that keeps its settings next to the executable. See the [portable mode reference](docs/PORTABLE.md).
 
-## Supported Package Managers
+## Package Managers
 
 **NOTE:** All package managers do support basic install, update, and uninstall processes, as well as checking for updates, finding new packages, and retrieving details from a package.
 
-<img src="https://marticliment.com/unigetui/extra/supported-managers.svg"/>
+UniGetUI loads package managers based on the current platform. Windows builds include WinGet, Scoop, Chocolatey, Windows PowerShell, PowerShell 7, npm, Bun, pip, Cargo, .NET Tool, and vcpkg. macOS and Linux builds include Homebrew, PowerShell 7, npm, Bun, pip, Cargo, .NET Tool, and vcpkg; Linux builds also include distro-aware support for APT, DNF, Pacman, Snap, and Flatpak where applicable.
+
+![image](media/supported-managers.svg)
 
 ✅: Supported on UniGetUI<br>
 ☑️: Not directly supported but can be easily achieved<br>
@@ -107,101 +184,38 @@ UniGetUI has a built-in autoupdater. However, it can also be updated like any ot
 ❌: Not supported by the Package Manager<br>
 <br>
 
-# Translating UniGetUI to other languages
-To translate UniGetUI to other languages or to update an old translation, please see [Translating UniGetUI - UniGetUI Wiki](https://github.com/marticliment/UniGetUI/wiki#translating-wingetui) for more info.
+## Translations
 
+UniGetUI translations are maintained directly in this repository. For the current language list, completion status, and per-language contributor attributions, see [TRANSLATION.md](TRANSLATION.md). If you spot a translation issue or want to improve a locale, please open an issue or submit a pull request.
 
-## Currently Supported languages
-<!-- Autogenerated translations -->
-| Language | Translated | Translator(s) |
-| :-- | :-- | --- |
-| <img src='https://flagcdn.com/sa.svg' width=20> &nbsp; Arabic - عربي‎ | 88% | [Abdu11ahAS](https://github.com/Abdu11ahAS), [Abdullah-Dev115](https://github.com/Abdullah-Dev115), [bassuny3003](https://github.com/bassuny3003), [DaRandomCube](https://github.com/DaRandomCube), [FancyCookin](https://github.com/FancyCookin), [mo9a7i](https://github.com/mo9a7i) |
-| <img src='https://flagcdn.com/bg.svg' width=20> &nbsp; Bulgarian - български | 44% | Vasil Kolev |
-| <img src='https://flagcdn.com/bd.svg' width=20> &nbsp; Bangla - বাংলা | 68% | [fluentmoheshwar](https://github.com/fluentmoheshwar), [itz-rj-here](https://github.com/itz-rj-here), Mushfiq Iqbal Rayon, Nilavra Bhattacharya, [samiulislamsharan](https://github.com/samiulislamsharan) |
-| <img src='https://flagcdn.com/ad.svg' width=20> &nbsp; Catalan - Català | 100% | [marticliment](https://github.com/marticliment) |
-| <img src='https://flagcdn.com/cz.svg' width=20> &nbsp; Czech - Čeština | 94% | [mlisko](https://github.com/mlisko), [panther7](https://github.com/panther7), [xtorlukas](https://github.com/xtorlukas) |
-| <img src='https://flagcdn.com/dk.svg' width=20> &nbsp; Danish - Dansk | 94% | [AAUCrisp](https://github.com/AAUCrisp), [bstordrup](https://github.com/bstordrup), [mikkolukas](https://github.com/mikkolukas), [siewers](https://github.com/siewers), [yrjarv](https://github.com/yrjarv) |
-| <img src='https://flagcdn.com/de.svg' width=20> &nbsp; German - Deutsch | 100% | [1270o1](https://github.com/1270o1), [alxhu-dev](https://github.com/alxhu-dev), [Araxxas](https://github.com/Araxxas), [CanePlayz](https://github.com/CanePlayz), [Datacra5H](https://github.com/Datacra5H), [ebnater](https://github.com/ebnater), [martinwilco](https://github.com/martinwilco), [michaelmairegger](https://github.com/michaelmairegger), [Seeloewen](https://github.com/Seeloewen), [TheScarfix](https://github.com/TheScarfix), [tkohlmeier](https://github.com/tkohlmeier), [VfBFan](https://github.com/VfBFan), [yrjarv](https://github.com/yrjarv) |
-| <img src='https://flagcdn.com/gr.svg' width=20> &nbsp; Greek - Ελληνικά | 100% | [antwnhsx](https://github.com/antwnhsx), [panos78](https://github.com/panos78), [seijind](https://github.com/seijind), [thunderstrike116](https://github.com/thunderstrike116), [wobblerrrgg](https://github.com/wobblerrrgg) |
-| <img src='https://flagcdn.com/ee.svg' width=20> &nbsp; Estonian - Eesti | 46% | [artjom3729](https://github.com/artjom3729) |
-| <img src='https://flagcdn.com/gb.svg' width=20> &nbsp; English - English | 100% | [marticliment](https://github.com/marticliment), [ppvnf](https://github.com/ppvnf) |
-| <img src='https://flagcdn.com/es.svg' width=20> &nbsp; Spanish - Castellano | 100% | [apazga](https://github.com/apazga), [dalbitresb12](https://github.com/dalbitresb12), [evaneliasyoung](https://github.com/evaneliasyoung), [guplem](https://github.com/guplem), [JMoreno97](https://github.com/JMoreno97), [marticliment](https://github.com/marticliment), [P10Designs](https://github.com/P10Designs), [rubnium](https://github.com/rubnium), [uKER](https://github.com/uKER) |
-| <img src='https://flagcdn.com/ir.svg' width=20> &nbsp; Persian - فارسی‎ | 100% | [MobinMardi](https://github.com/MobinMardi) |
-| <img src='https://flagcdn.com/fi.svg' width=20> &nbsp; Finnish - Suomi | 99% | [simakuutio](https://github.com/simakuutio) |
-| <img src='https://flagcdn.com/fil.svg' width=20> &nbsp; Filipino - Filipino | 96% | [infyProductions](https://github.com/infyProductions) |
-| <img src='https://flagcdn.com/fr.svg' width=20> &nbsp; French - Français | 100% | BreatFR, [Entropiness](https://github.com/Entropiness), Evans Costa, [PikPakPik](https://github.com/PikPakPik), Rémi Guerrero, [W1L7dev](https://github.com/W1L7dev) |
-| <img src='https://flagcdn.com/in.svg' width=20> &nbsp; Gujarati - ગુજરાતી | 8% |  |
-| <img src='https://flagcdn.com/in.svg' width=20> &nbsp; Hindi - हिंदी | 41% | [Ashu-r](https://github.com/Ashu-r), [atharva_xoxo](https://github.com/atharva_xoxo), [satanarious](https://github.com/satanarious) |
-| <img src='https://flagcdn.com/hr.svg' width=20> &nbsp; Croatian - Hrvatski | 45% | Stjepan Treger |
-| <img src='https://flagcdn.com/il.svg' width=20> &nbsp; Hebrew - עִבְרִית‎ | 100% | [maximunited](https://github.com/maximunited), Oryan Hassidim |
-| <img src='https://flagcdn.com/hu.svg' width=20> &nbsp; Hungarian - Magyar | 99% | [gidano](https://github.com/gidano) |
-| <img src='https://flagcdn.com/it.svg' width=20> &nbsp; Italian - Italiano | 100% | David Senoner, [giacobot](https://github.com/giacobot), [maicol07](https://github.com/maicol07), [mapi68](https://github.com/mapi68), [mrfranza](https://github.com/mrfranza), Rosario Di Mauro |
-| <img src='https://flagcdn.com/id.svg' width=20> &nbsp; Indonesian - Bahasa Indonesia | 99% | [arthackrc](https://github.com/arthackrc), [joenior](https://github.com/joenior), [nrarfn](https://github.com/nrarfn) |
-| <img src='https://flagcdn.com/jp.svg' width=20> &nbsp; Japanese - 日本語 | 78% | [anmoti](https://github.com/anmoti), [nob-swik](https://github.com/nob-swik), Nobuhiro Shintaku, sho9029, [tacostea](https://github.com/tacostea), Yuki Takase |
-| <img src='https://flagcdn.com/ka.svg' width=20> &nbsp; Georgian - ქართული | 100% | [marticliment](https://github.com/marticliment), [ppvnf](https://github.com/ppvnf) |
-| <img src='https://flagcdn.com/in.svg' width=20> &nbsp; Kannada - ಕನ್ನಡ | 10% | [skanda890](https://github.com/skanda890) |
-| <img src='https://flagcdn.com/kr.svg' width=20> &nbsp; Korean - 한국어 | 99% | [jihoon416](https://github.com/jihoon416), [minbert](https://github.com/minbert), [MuscularPuky](https://github.com/MuscularPuky), [shblue21](https://github.com/shblue21), [thejjw](https://github.com/thejjw), [VenusGirl](https://github.com/VenusGirl) |
-| <img src='https://flagcdn.com/lt.svg' width=20> &nbsp; Lithuanian - Lietuvių | 90% | [dziugas1959](https://github.com/dziugas1959), Džiugas Januševičius, [martyn3z](https://github.com/martyn3z) |
-| <img src='https://flagcdn.com/mk.svg' width=20> &nbsp; Macedonian - Македонски | 46% | LordDeatHunter |
-| <img src='https://flagcdn.com/no.svg' width=20> &nbsp; Norwegian (bokmål) | 80% | [mikaelkw](https://github.com/mikaelkw), [yrjarv](https://github.com/yrjarv) |
-| <img src='https://flagcdn.com/no.svg' width=20> &nbsp; Norwegian (nynorsk) | 75% | [yrjarv](https://github.com/yrjarv) |
-| <img src='https://flagcdn.com/nl.svg' width=20> &nbsp; Dutch - Nederlands | 100% | [abbydiode](https://github.com/abbydiode), [CateyeNL](https://github.com/CateyeNL), [Stephan-P](https://github.com/Stephan-P) |
-| <img src='https://flagcdn.com/pl.svg' width=20> &nbsp; Polish - Polski | 100% | [GrzegorzKi](https://github.com/GrzegorzKi), [ikarmus2001](https://github.com/ikarmus2001), [juliazero](https://github.com/juliazero), [KamilZielinski](https://github.com/KamilZielinski), [kwiateusz](https://github.com/kwiateusz), [RegularGvy13](https://github.com/RegularGvy13), [szumsky](https://github.com/szumsky), [ThePhaseless](https://github.com/ThePhaseless) |
-| <img src='https://flagcdn.com/br.svg' width=20> &nbsp; Portuguese (Brazil) | 100% | [maisondasilva](https://github.com/maisondasilva), [ppvnf](https://github.com/ppvnf), [Rodrigo-Matsuura](https://github.com/Rodrigo-Matsuura), [thiagojramos](https://github.com/thiagojramos), [wanderleihuttel](https://github.com/wanderleihuttel) |
-| <img src='https://flagcdn.com/pt.svg' width=20> &nbsp; Portuguese (Portugal) | 99% | [PoetaGA](https://github.com/PoetaGA), [Putocoroa](https://github.com/Putocoroa), [Tiago_Ferreira](https://github.com/Tiago_Ferreira) |
-| <img src='https://flagcdn.com/ro.svg' width=20> &nbsp; Romanian - Română | 100% | [David735453](https://github.com/David735453), [SilverGreen93](https://github.com/SilverGreen93), TZACANEL |
-| <img src='https://flagcdn.com/ru.svg' width=20> &nbsp; Russian - Русский | 100% | [bropines](https://github.com/bropines), [Denisskas](https://github.com/Denisskas), [DvladikD](https://github.com/DvladikD), [flatron4eg](https://github.com/flatron4eg), Gleb Saygin, Ilia Petrov, [katrovsky](https://github.com/katrovsky), Sergey, sklart, [solarscream](https://github.com/solarscream), [tapnisu](https://github.com/tapnisu) |
-| <img src='https://flagcdn.com/in.svg' width=20> &nbsp; Sanskrit - संस्कृत भाषा | 10% | [skanda890](https://github.com/skanda890) |
-| <img src='https://flagcdn.com/sk.svg' width=20> &nbsp; Slovak - Slovenčina | 9% | [Luk164](https://github.com/Luk164) |
-| <img src='https://flagcdn.com/rs.svg' width=20> &nbsp; Serbian - Srpski | 75% | [daVinci13](https://github.com/daVinci13), [momcilovicluka](https://github.com/momcilovicluka) |
-| <img src='https://flagcdn.com/al.svg' width=20> &nbsp; Albanian - Shqip | 100% | [RDN000](https://github.com/RDN000) |
-| <img src='https://flagcdn.com/lk.svg' width=20> &nbsp; Sinhala - සිංහල | 12% | [SashikaSandeepa](https://github.com/SashikaSandeepa), [Savithu-s3](https://github.com/Savithu-s3), [ttheek](https://github.com/ttheek) |
-| <img src='https://flagcdn.com/si.svg' width=20> &nbsp; Slovene - Slovenščina | 100% | [rumplin](https://github.com/rumplin) |
-| <img src='https://flagcdn.com/se.svg' width=20> &nbsp; Swedish - Svenska | 55% | [curudel](https://github.com/curudel), [kakmonster](https://github.com/kakmonster), [umeaboy](https://github.com/umeaboy) |
-| <img src='https://flagcdn.com/ph.svg' width=20> &nbsp; Tagalog - Tagalog | 13% | lasersPew, [znarfm](https://github.com/znarfm) |
-| <img src='https://flagcdn.com/th.svg' width=20> &nbsp; Thai - ภาษาไทย | 73% | [apaeisara](https://github.com/apaeisara), [dulapahv](https://github.com/dulapahv), [rikoprushka](https://github.com/rikoprushka) |
-| <img src='https://flagcdn.com/tr.svg' width=20> &nbsp; Turkish - Türkçe | 100% | [ahmetozmtn](https://github.com/ahmetozmtn), [dogancanyr @anzeralp](https://github.com/dogancanyr @anzeralp), [gokberkgs](https://github.com/gokberkgs) |
-| <img src='https://flagcdn.com/ua.svg' width=20> &nbsp; Ukrainian - Українська | 99% | Artem Moldovanenko, Operator404, [Taron-art](https://github.com/Taron-art) |
-| <img src='https://flagcdn.com/pk.svg' width=20> &nbsp; Urdu - اردو | 94% | [digitio](https://github.com/digitio), [digitpk](https://github.com/digitpk), [hamzaharoon1314](https://github.com/hamzaharoon1314) |
-| <img src='https://flagcdn.com/vn.svg' width=20> &nbsp; Vietnamese - Tiếng Việt | 100% | [aethervn2309](https://github.com/aethervn2309), [legendsjoon](https://github.com/legendsjoon), [txavlog](https://github.com/txavlog), [vanlongluuly](https://github.com/vanlongluuly) |
-| <img src='https://flagcdn.com/cn.svg' width=20> &nbsp; Simplified Chinese (China) | 100% | Aaron Liu, adfnekc, [Ardenet](https://github.com/Ardenet), [arthurfsy2](https://github.com/arthurfsy2), [bai0012](https://github.com/bai0012), BUGP Association, ciaran, CnYeSheng, Cololi, [dongfengweixiao](https://github.com/dongfengweixiao), [enKl03B](https://github.com/enKl03B), [seanyu0](https://github.com/seanyu0), [Sigechaishijie](https://github.com/Sigechaishijie), [SpaceTimee](https://github.com/SpaceTimee), [xiaopangju](https://github.com/xiaopangju), Yisme |
-| <img src='https://flagcdn.com/tw.svg' width=20> &nbsp; Traditional Chinese (Taiwan) | 99% | Aaron Liu, CnYeSheng, Cololi, [enKl03B](https://github.com/enKl03B), [Henryliu880922](https://github.com/Henryliu880922), [StarsShine11904](https://github.com/StarsShine11904), [yrctw](https://github.com/yrctw) |
-
-Last updated: Thu May 29 00:15:21 2025
-<!-- END Autogenerated translations -->
-
-
-# Contributions
- UniGetUI wouldn't have been possible without the help of our dear contributors. From the person who fixed a typo to the person who improved half of the code, UniGetUI wouldn't be possible without them! :smile:<br><br>
-
-## Contributors:
- [![My dear contributors](https://contrib.rocks/image?repo=marticliment/UniGetUI)](https://github.com/marticliment/UniGetUI/graphs/contributors)<br><br>
+## Screenshots
  
+![image](media/UniGetUI_1.png)
 
-# Screenshots
- 
-![image](https://raw.githubusercontent.com/marticliment/UniGetUI/main/media/UniGetUI_1.png)
+![image](media/UniGetUI_2.png)
 
-![image](https://raw.githubusercontent.com/marticliment/UniGetUI/main/media/UniGetUI_2.png)
+![image](media/UniGetUI_3.png)
 
-![image](https://raw.githubusercontent.com/marticliment/UniGetUI/main/media/UniGetUI_3.png)
+![image](media/UniGetUI_4.png)
 
-![image](https://raw.githubusercontent.com/marticliment/UniGetUI/main/media/UniGetUI_4.png)
+![image](media/UniGetUI_5.png)
 
-![image](https://raw.githubusercontent.com/marticliment/UniGetUI/main/media/UniGetUI_5.png)
+![image](media/UniGetUI_6.png)
 
-![image](https://raw.githubusercontent.com/marticliment/UniGetUI/main/media/UniGetUI_6.png)
+![image](media/UniGetUI_7.png)
 
-![image](https://raw.githubusercontent.com/marticliment/UniGetUI/main/media/UniGetUI_7.png)
+![image](media/UniGetUI_8.png)
 
-![image](https://raw.githubusercontent.com/marticliment/UniGetUI/main/media/UniGetUI_8.png)
-
-![image](https://raw.githubusercontent.com/marticliment/UniGetUI/main/media/UniGetUI_9.png)
-
-![image](https://raw.githubusercontent.com/marticliment/UniGetUI/main/media/UniGetUI_10.png)
+![image](media/UniGetUI_9.png)
 
 
-# Frequently asked questions
+## Contributions
+UniGetUI continues to grow thanks to its community of contributors. Devolutions is grateful to everyone who contributes code, translations, documentation, testing, and feedback to the project.<br><br>
+
+[![Contributors](https://contrib.rocks/image?repo=Devolutions/UniGetUI)](https://github.com/Devolutions/UniGetUI/graphs/contributors)<br><br>
+
+
+## Frequently asked questions
 
 **Q: I am unable to install or upgrade a specific Winget package! What should I do?**<br>
 
@@ -231,14 +245,14 @@ Since UniGetUI is open source and safe to use, whitelist the app in the settings
 
 #
 
-**Q: Are Winget/Scoop packages safe?**<br>
+**Q: Are packages from third-party package managers safe?**<br>
 
-A: UniGetUI, Microsoft, and Scoop aren't responsible for the packages available for download, which are provided by third parties and can theoretically be compromised.
+A: UniGetUI and the package-manager maintainers aren't responsible for every package available for download. Packages are provided by third parties and can theoretically be compromised, regardless of whether they come from WinGet, Scoop, Chocolatey, Homebrew, APT, DNF, Pacman, Flatpak, Snap, or another source.
 
-Microsoft has implemented a few checks for the software available on Winget to mitigate the risks of downloading malware. Even so, it's recommended that you only download software from trusted publishers. 
+Some package managers and repositories implement checks to mitigate the risks of downloading malware. Even so, it's recommended that you only download software from trusted publishers.
 
-<br><p align="center"><i>Check out the <a href="https://github.com/marticliment/UniGetUI/wiki">Wiki</a> for more information!</i></p>
+## Command-line interface:
 
-## Command-line parameters:
+Check out the CLI reference [here](docs/CLI.md) and the IPC reference [here](docs/IPC.md).
 
-Check out the full list of parameters [here](https://github.com/marticliment/UniGetUI/blob/main/cli-arguments.md)
+For portable installations and where UniGetUI keeps its data, see the [portable mode reference](docs/PORTABLE.md).

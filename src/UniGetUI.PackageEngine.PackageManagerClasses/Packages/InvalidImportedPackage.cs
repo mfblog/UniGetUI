@@ -6,6 +6,7 @@ using UniGetUI.PackageEngine.Classes.Manager;
 using UniGetUI.PackageEngine.Classes.Serializable;
 using UniGetUI.PackageEngine.Enums;
 using UniGetUI.PackageEngine.Interfaces;
+using UniGetUI.PackageEngine.Serializable;
 using UniGetUI.PackageEngine.Structs;
 
 namespace UniGetUI.PackageEngine.PackageClasses
@@ -14,40 +15,67 @@ namespace UniGetUI.PackageEngine.PackageClasses
     {
         public IPackageDetails Details { get; }
 
-        public PackageTag Tag { get => PackageTag.Unavailable; set { } }
+        public PackageTag Tag
+        {
+            get => PackageTag.Unavailable;
+            set { }
+        }
 
         private bool __is_checked;
         public bool IsChecked
         {
             get { return __is_checked; }
-            set { __is_checked = value; OnPropertyChanged(nameof(IsChecked)); }
+            set
+            {
+                __is_checked = value;
+                OnPropertyChanged(nameof(IsChecked));
+            }
         }
 
         private readonly long __hash;
         private readonly long __extended_hash;
 
         private static OverridenInstallationOptions __overriden_options;
-        public ref OverridenInstallationOptions OverridenOptions { get => ref __overriden_options; }
+        public ref OverridenInstallationOptions OverridenOptions
+        {
+            get => ref __overriden_options;
+        }
 
         public string Name { get; }
 
         public string Id { get; }
 
+        // An incompatible package cannot be operated on, so it never reaches a command line.
+        public bool HasConcreteVersion => false;
+
         public string VersionString { get; }
 
         public CoreTools.Version NormalizedVersion { get; }
 
-        public CoreTools.Version NormalizedNewVersion { get => CoreTools.Version.Null; }
+        public CoreTools.Version NormalizedNewVersion
+        {
+            get => CoreTools.Version.Null;
+        }
 
         public IManagerSource Source { get; }
 
         public IPackageManager Manager { get; }
 
-        public string NewVersionString { get => ""; }
+        public string NewVersionString
+        {
+            get => "";
+        }
 
-        public bool IsUpgradable { get => false; }
+        public bool IsUpgradable
+        {
+            get => false;
+        }
 
-        public PackageScope Scope { get => PackageScope.Local; set { } }
+        public string Scope
+        {
+            get => PackageScope.Local;
+            set { }
+        }
 
         public string SourceAsString { get; }
 
@@ -70,12 +98,15 @@ namespace UniGetUI.PackageEngine.PackageClasses
             __hash = CoreTools.HashStringAsLong(data.Name + data.Id);
             __extended_hash = CoreTools.HashStringAsLong(data.Name + data.Id + data.Version);
         }
+
         public Task AddToIgnoredUpdatesAsync(string version = "*")
         {
             return Task.CompletedTask;
         }
 
-        public SerializablePackage AsSerializable()
+        public Task<InstallOptions> GetInstallOptions() => Task.FromResult(new InstallOptions());
+
+        public Task<SerializablePackage> AsSerializableAsync()
         {
             throw new NotImplementedException();
         }
@@ -126,9 +157,9 @@ namespace UniGetUI.PackageEngine.PackageClasses
             return Task.FromResult(String.Empty);
         }
 
-        public IPackage? GetInstalledPackage()
+        public IReadOnlyList<IPackage> GetInstalledPackages()
         {
-            return null;
+            return [];
         }
 
         public IReadOnlyList<Uri> GetScreenshots()
@@ -166,7 +197,12 @@ namespace UniGetUI.PackageEngine.PackageClasses
             return false;
         }
 
-        public bool IsUpdateMinor()
+        public Task<string?> GetInstallerFileName()
+        {
+            return Task.FromResult<string?>("");
+        }
+
+        public bool IsUpdateMinor(int level = InstallOptions.DefaultSkipMinorLevel)
         {
             return false;
         }
@@ -195,8 +231,14 @@ namespace UniGetUI.PackageEngine.PackageClasses
         public int? PackageCount { get; }
         public string? UpdateDate { get; }
 
-        public string AsString { get => Name; }
-        public string AsString_DisplayName { get => Name; }
+        public string AsString
+        {
+            get => Name;
+        }
+        public string AsString_DisplayName
+        {
+            get => Name;
+        }
 
         public NullSource(string name)
         {
@@ -215,8 +257,6 @@ namespace UniGetUI.PackageEngine.PackageClasses
             return Name;
         }
 
-        public void RefreshSourceNames()
-        { }
-
+        public void RefreshSourceNames() { }
     }
 }

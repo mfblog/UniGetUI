@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
+using UniGetUI.Core.Data;
+using UniGetUI.Core.Logging;
 using UniGetUI.Core.Tools;
 using UniGetUI.Interface.Enums;
 using UniGetUI.PackageEngine.Classes.Manager;
@@ -15,6 +17,8 @@ namespace UniGetUI.PackageEngine.Managers.PowerShellManager
 {
     public class PowerShell : BaseNuGet
     {
+        public override bool CommandLineIsShellInterpreted => true;
+
         public PowerShell()
         {
             Capabilities = new ManagerCapabilities
@@ -24,6 +28,10 @@ namespace UniGetUI.PackageEngine.Managers.PowerShellManager
                 SupportsCustomVersions = true,
                 CanDownloadInstaller = true,
                 SupportsCustomScopes = true,
+                // Update-Module/Uninstall-Module (PowerShellGet) take no -Scope; only Install-Module does
+                SupportsCustomScopesOnUpdate = false,
+                SupportsCustomScopesOnUninstall = false,
+                CanListDependencies = true,
                 SupportsCustomSources = true,
                 SupportsPreRelease = true,
                 SupportsCustomPackageIcons = true,
@@ -33,24 +41,42 @@ namespace UniGetUI.PackageEngine.Managers.PowerShellManager
                     KnowsUpdateDate = false,
                 },
                 SupportsProxy = ProxySupport.Partially,
-                SupportsProxyAuth = true
+                SupportsProxyAuth = true,
+                KnowsPackageReleaseDate = PackageReleaseDateSupport.Yes,
             };
 
             Properties = new ManagerProperties
             {
+                Id = "winps",
                 Name = "PowerShell",
                 DisplayName = "PowerShell 5.x",
-                Description = CoreTools.Translate("PowerShell's package manager. Find libraries and scripts to expand PowerShell capabilities<br>Contains: <b>Modules, Scripts, Cmdlets</b>"),
+                Description = CoreTools.Translate(
+                    "PowerShell's package manager. Find libraries and scripts to expand PowerShell capabilities<br>Contains: <b>Modules, Scripts, Cmdlets</b>"
+                ),
                 IconId = IconType.PowerShell,
                 ColorIconId = "powershell_color",
                 ExecutableFriendlyName = "powershell.exe",
                 InstallVerb = "Install-Module",
                 UninstallVerb = "Uninstall-Module",
                 UpdateVerb = "Update-Module",
-                ExecutableCallArgs = " -NoProfile -Command",
-                KnownSources = [new ManagerSource(this, "PSGallery", new Uri("https://www.powershellgallery.com/api/v2")),
-                                new ManagerSource(this, "PoshTestGallery", new Uri("https://www.poshtestgallery.com/api/v2"))],
-                DefaultSource = new ManagerSource(this, "PSGallery", new Uri("https://www.powershellgallery.com/api/v2")),
+                KnownSources =
+                [
+                    new ManagerSource(
+                        this,
+                        "PSGallery",
+                        new Uri("https://www.powershellgallery.com/api/v2")
+                    ),
+                    new ManagerSource(
+                        this,
+                        "PoshTestGallery",
+                        new Uri("https://www.poshtestgallery.com/api/v2")
+                    ),
+                ],
+                DefaultSource = new ManagerSource(
+                    this,
+                    "PSGallery",
+                    new Uri("https://www.powershellgallery.com/api/v2")
+                ),
             };
 
             DetailsHelper = new PowerShellDetailsHelper(this);
@@ -65,89 +91,139 @@ namespace UniGetUI.PackageEngine.Managers.PowerShellManager
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = Status.ExecutablePath,
-                    Arguments = Properties.ExecutableCallArgs + " Get-InstalledModule",
+                    Arguments = Status.ExecutableCallArgs + " Get-InstalledModule",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     RedirectStandardInput = true,
                     UseShellExecute = false,
                     CreateNoWindow = true,
-                    StandardOutputEncoding = Encoding.UTF8
-                }
+                    StandardOutputEncoding = Encoding.UTF8,
+                },
             };
 
-            IProcessTaskLogger logger = TaskLogger.CreateNew(LoggableTaskType.ListInstalledPackages, p);
+            IProcessTaskLogger logger = TaskLogger.CreateNew(
+                LoggableTaskType.ListInstalledPackages,
+                p
+            );
 
             p.Start();
             string? line;
-            List<Package> Packages = [];
-            bool DashesPassed = false;
+            List<string> outputLines = [];
             while ((line = p.StandardOutput.ReadLine()) is not null)
             {
                 logger.AddToStdOut(line);
-                if (!DashesPassed)
-                {
-                    if (line.Contains("-----"))
-                    {
-                        DashesPassed = true;
-                    }
-                }
-                else
-                {
-                    string[] elements = Regex.Replace(line, " {2,}", " ").Split(' ');
-                    if (elements.Length < 3)
-                    {
-                        continue;
-                    }
-
-                    for (int i = 0; i < elements.Length; i++)
-                    {
-                        elements[i] = elements[i].Trim();
-                    }
-
-                    Packages.Add(new Package(CoreTools.FormatAsName(elements[1]), elements[1], elements[0],
-                        SourcesHelper.Factory.GetSourceOrDefault(elements[2]), this));
-                }
+                outputLines.Add(line);
             }
 
             logger.AddToStdErr(p.StandardError.ReadToEnd());
             p.WaitForExit();
             logger.Close(p.ExitCode);
 
-            return Packages;
+            return ParseInstalledPackages(outputLines, this);
         }
 
-        protected override ManagerStatus LoadManager()
+        public override List<string> FindCandidateExecutableFiles()
         {
-            ManagerStatus status = new()
-            {
-                ExecutablePath = Path.Join(Environment.SystemDirectory, "windowspowershell\\v1.0\\powershell.exe")
-            };
-            status.Found = File.Exists(status.ExecutablePath);
+            var candidates = CoreTools.WhichMultiple("powershell.exe");
+            if (candidates.Count is 0)
+                candidates.Add(CoreData.PowerShell5);
+            return candidates;
+        }
 
-            if (!status.Found)
+        protected override void _loadManagerExecutableFile(
+            out bool found,
+            out string path,
+            out string callArguments
+        )
+        {
+            var (_found, _path) = GetExecutableFile();
+            found = _found;
+            path = _path;
+            callArguments = " -NoProfile -Command";
+        }
+
+        protected override IReadOnlyList<string> _getOperationCallArgs(
+            string executablePath,
+            string callArguments
+        )
+        {
+            // Degrade to the concatenated -Command form when the launcher cannot run: operations
+            // keep working exactly as they did before, and the parameter validation in
+            // BasePkgOperationHelper still rejects anything a shell could reinterpret.
+            string launcher = CoreData.PowerShellOperationLauncher;
+            if (!CoreTools.PowerShellLauncherWorks(executablePath, launcher))
             {
-                return status;
+                Logger.Warn(
+                    $"Not using the PowerShell operation launcher at {launcher}; falling back to -Command"
+                );
+                return [];
             }
 
-            Process process = new()
+            return ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", launcher, "tls12"];
+        }
+
+        protected override void _loadManagerVersion(out string version)
+        {
+            using Process process = new()
             {
                 StartInfo = new ProcessStartInfo
                 {
-                    FileName = status.ExecutablePath,
-                    Arguments = Properties.ExecutableCallArgs + " \"echo $PSVersionTable\"",
+                    FileName = Status.ExecutablePath,
+                    Arguments = Status.ExecutableCallArgs + " \"echo $PSVersionTable\"",
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     CreateNoWindow = true,
-                    StandardOutputEncoding = Encoding.UTF8
-                }
+                    StandardOutputEncoding = Encoding.UTF8,
+                },
             };
             process.Start();
-            status.Version = process.StandardOutput.ReadToEnd().Trim();
-
-            return status;
+            version = process.StandardOutput.ReadToEnd().Trim();
         }
 
-    }
+        internal static IReadOnlyList<Package> ParseInstalledPackages(
+            IEnumerable<string> outputLines,
+            PowerShell manager
+        )
+        {
+            List<Package> packages = [];
+            bool dashesPassed = false;
 
+            foreach (string rawLine in outputLines)
+            {
+                if (!dashesPassed)
+                {
+                    if (rawLine.Contains("-----"))
+                    {
+                        dashesPassed = true;
+                    }
+
+                    continue;
+                }
+
+                string[] elements = Regex.Replace(rawLine, " {2,}", " ").Split(' ');
+                if (elements.Length < 3)
+                {
+                    continue;
+                }
+
+                for (int i = 0; i < elements.Length; i++)
+                {
+                    elements[i] = elements[i].Trim();
+                }
+
+                packages.Add(
+                    new Package(
+                        CoreTools.FormatAsName(elements[1]),
+                        elements[1],
+                        elements[0],
+                        manager.SourcesHelper.Factory.GetSourceOrDefault(elements[2]),
+                        manager
+                    )
+                );
+            }
+
+            return packages;
+        }
+    }
 }

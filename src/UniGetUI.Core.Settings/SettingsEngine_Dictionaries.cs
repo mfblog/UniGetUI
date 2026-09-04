@@ -7,43 +7,56 @@ namespace UniGetUI.Core.SettingsEngine
 {
     public static partial class Settings
     {
-        private static readonly ConcurrentDictionary<string, Dictionary<object, object?>> _dictionarySettings = new();
+        private static readonly ConcurrentDictionary<
+            K,
+            Dictionary<object, object?>
+        > _dictionarySettings = new();
 
         // Returns an empty dictionary if the setting doesn't exist and null if the types are invalid
-        private static Dictionary<K, V?> _getDictionary<K, V>(string setting)
-            where K : notnull
+        private static Dictionary<KeyT, ValueT?>? _getDictionary<KeyT, ValueT>(K key)
+            where KeyT : notnull
         {
+            string setting = ResolveKey(key);
             try
             {
                 try
                 {
-                    if (_dictionarySettings.TryGetValue(setting, out Dictionary<object, object?>? result))
+                    if (
+                        _dictionarySettings.TryGetValue(
+                            key,
+                            out Dictionary<object, object?>? result
+                        )
+                    )
                     {
                         // If the setting was cached
-                        return result.ToDictionary(
-                            kvp => (K)kvp.Key,
-                            kvp => (V?)kvp.Value
-                        );
+                        return result.ToDictionary(kvp => (KeyT)kvp.Key, kvp => (ValueT?)kvp.Value);
                     }
                 }
                 catch (InvalidCastException)
                 {
                     Logger.Error(
-                        $"Tried to get a dictionary setting with a key of type {typeof(K)} and a value of type {typeof(V)}, which is not the type of the dictionary");
+                        $"Tried to get a dictionary setting with a key of type {typeof(KeyT)} and a value of type {typeof(ValueT)}, which is not the type of the dictionary"
+                    );
                     return null;
                 }
 
                 // Otherwise, load the setting from disk and cache that setting
-                Dictionary<K, V?> value = [];
-                if (File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, $"{setting}.json")))
+                Dictionary<KeyT, ValueT?> value = [];
+                if (
+                    File.Exists(
+                        Path.Join(CoreData.UniGetUIUserConfigurationDirectory, $"{setting}.json")
+                    )
+                )
                 {
-                    string result = File.ReadAllText(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, $"{setting}.json"));
+                    string result = File.ReadAllText(
+                        Path.Join(CoreData.UniGetUIUserConfigurationDirectory, $"{setting}.json")
+                    );
                     try
                     {
                         if (result != "")
                         {
-
-                            Dictionary<K, V?>? item = JsonSerializer.Deserialize<Dictionary<K, V?>>(result, SerializationOptions);
+                            Dictionary<KeyT, ValueT?>? item =
+                                SettingsJson.DeserializeDictionary<KeyT, ValueT?>(result);
                             if (item is not null)
                             {
                                 value = item;
@@ -53,15 +66,20 @@ namespace UniGetUI.Core.SettingsEngine
                     catch (InvalidCastException)
                     {
                         Logger.Error(
-                            $"Tried to get a dictionary setting with a key of type {typeof(K)} and a value of type {typeof(V)}, but the setting on disk ({result}) cannot be deserialized to that");
+                            $"Tried to get a dictionary setting with a key of type {typeof(KeyT)} and a value of type {typeof(ValueT)}, but the setting on disk ({result}) cannot be deserialized to that"
+                        );
                     }
                 }
 
-                _dictionarySettings[setting] = value.ToDictionary(
+                _dictionarySettings[key] = value.ToDictionary(
                     kvp => (object)kvp.Key,
                     kvp => (object?)kvp.Value
                 );
                 return value;
+            }
+            catch (InvalidOperationException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -72,108 +90,121 @@ namespace UniGetUI.Core.SettingsEngine
         }
 
         // Returns an empty dictionary if the setting doesn't exist and null if the types are invalid
-        public static IReadOnlyDictionary<K, V?> GetDictionary<K, V>(string setting)
-            where K : notnull
+        public static IReadOnlyDictionary<KeyT, ValueT?>? GetDictionary<KeyT, ValueT>(K settingsKey)
+            where KeyT : notnull
         {
-            return _getDictionary<K, V?>(setting);
+            return _getDictionary<KeyT, ValueT?>(settingsKey);
         }
 
-        public static void SetDictionary<K, V>(string setting, Dictionary<K, V> value)
-            where K : notnull
+        public static void SetDictionary<KeyT, ValueT>(
+            K settingsKey,
+            Dictionary<KeyT, ValueT> value
+        )
+            where KeyT : notnull
         {
-            _dictionarySettings[setting] = value.ToDictionary(
-                kvp => (object)kvp.Key,
-                kvp => (object?)kvp.Value
-            );
-
+            string setting = ResolveKey(settingsKey);
             var file = Path.Join(CoreData.UniGetUIUserConfigurationDirectory, $"{setting}.json");
             try
             {
+                if (value.Count != 0)
+                    File.WriteAllText(file, SettingsJson.SerializeDictionary(value));
+                else if (File.Exists(file))
+                    File.Delete(file);
 
-                if (value.Count != 0) File.WriteAllText(file, JsonSerializer.Serialize(value, SerializationOptions));
-                else if (File.Exists(file)) File.Delete(file);
+                _dictionarySettings[settingsKey] = value.ToDictionary(
+                    kvp => (object)kvp.Key,
+                    kvp => (object?)kvp.Value
+                );
+            }
+            catch (InvalidOperationException)
+            {
+                throw;
             }
             catch (Exception e)
             {
-                Logger.Error($"CANNOT SET SETTING DICTIONARY FOR setting={setting} [{string.Join(", ", value)}]");
+                Logger.Error(
+                    $"CANNOT SET SETTING DICTIONARY FOR setting={setting} [{string.Join(", ", value)}]"
+                );
                 Logger.Error(e);
             }
         }
 
-        public static V? GetDictionaryItem<K, V>(string setting, K key)
-            where K : notnull
+        public static ValueT? GetDictionaryItem<KeyT, ValueT>(K settingsKey, KeyT key)
+            where KeyT : notnull
         {
-            Dictionary<K, V?>? dictionary = _getDictionary<K, V>(setting);
-            if (dictionary == null || !dictionary.TryGetValue(key, out V? value)) return default;
+            Dictionary<KeyT, ValueT?>? dictionary = _getDictionary<KeyT, ValueT>(settingsKey);
+            if (dictionary == null || !dictionary.TryGetValue(key, out ValueT? value))
+                return default;
 
             return value;
         }
 
         // Also works as `Add`
-        public static V? SetDictionaryItem<K, V>(string setting, K key, V value)
-            where K : notnull
+        public static ValueT? SetDictionaryItem<KeyT, ValueT>(K settingsKey, KeyT key, ValueT value)
+            where KeyT : notnull
         {
-            Dictionary<K, V?>? dictionary = _getDictionary<K, V>(setting);
+            Dictionary<KeyT, ValueT?>? dictionary = _getDictionary<KeyT, ValueT>(settingsKey);
             if (dictionary == null)
             {
-                dictionary = new()
-                {
-                    { key, value }
-                };
-                SetDictionary(setting, dictionary);
+                dictionary = new() { { key, value } };
+                SetDictionary(settingsKey, dictionary);
                 return default;
             }
 
-            if (dictionary.TryGetValue(key, out V? oldValue))
+            if (dictionary.TryGetValue(key, out ValueT? oldValue))
             {
                 dictionary[key] = value;
-                SetDictionary(setting, dictionary);
+                SetDictionary(settingsKey, dictionary);
                 return oldValue;
             }
 
             dictionary.Add(key, value);
-            SetDictionary(setting, dictionary);
+            SetDictionary(settingsKey, dictionary);
             return default;
         }
 
-        public static V? RemoveDictionaryKey<K, V>(string setting, K key)
-            where K : notnull
+        public static ValueT? RemoveDictionaryKey<KeyT, ValueT>(K settingsKey, KeyT key)
+            where KeyT : notnull
         {
-            Dictionary<K, V?>? dictionary = _getDictionary<K, V>(setting);
-            if (dictionary == null) return default;
+            Dictionary<KeyT, ValueT?>? dictionary = _getDictionary<KeyT, ValueT>(settingsKey);
+            if (dictionary == null)
+                return default;
 
             bool success = false;
-            if (dictionary.TryGetValue(key, out V? value))
+            if (dictionary.TryGetValue(key, out ValueT? value))
             {
                 success = dictionary.Remove(key);
-                SetDictionary(setting, dictionary);
+                SetDictionary(settingsKey, dictionary);
             }
 
-            if (!success) return default;
+            if (!success)
+                return default;
             return value;
         }
 
-        public static bool DictionaryContainsKey<K, V>(string setting, K key)
-            where K : notnull
+        public static bool DictionaryContainsKey<KeyT, ValueT>(K settingsKey, KeyT key)
+            where KeyT : notnull
         {
-            Dictionary<K, V?>? dictionary = _getDictionary<K, V>(setting);
-            if (dictionary == null) return false;
+            Dictionary<KeyT, ValueT?>? dictionary = _getDictionary<KeyT, ValueT>(settingsKey);
+            if (dictionary == null)
+                return false;
 
             return dictionary.ContainsKey(key);
         }
 
-        public static bool DictionaryContainsValue<K, V>(string setting, V value)
-            where K : notnull
+        public static bool DictionaryContainsValue<KeyT, ValueT>(K settingsKey, ValueT value)
+            where KeyT : notnull
         {
-            Dictionary<K, V?>? dictionary = _getDictionary<K, V>(setting);
-            if (dictionary == null) return false;
+            Dictionary<KeyT, ValueT?>? dictionary = _getDictionary<KeyT, ValueT>(settingsKey);
+            if (dictionary == null)
+                return false;
 
             return dictionary.ContainsValue(value);
         }
 
-        public static void ClearDictionary(string setting)
+        public static void ClearDictionary(K settingsKey)
         {
-            SetDictionary(setting, new Dictionary<object, object>());
+            SetDictionary(settingsKey, new Dictionary<object, object>());
         }
     }
 }

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using UniGetUI.Core.Logging;
 using UniGetUI.PackageEngine.Enums;
 using UniGetUI.PackageEngine.Interfaces;
 
@@ -8,36 +9,69 @@ namespace UniGetUI.PackageEngine.ManagerClasses.Classes
     {
         private readonly IPackageManager Manager;
 
+        // Keep only recent operations; retained unbounded, each holds its full output and grows forever.
+        private const int MAX_RETAINED_OPERATIONS = 100;
         private readonly List<TaskLogger> operations = [];
-        public IReadOnlyList<ITaskLogger> Operations { get => (IReadOnlyList<ITaskLogger>)operations; }
+        public IReadOnlyList<ITaskLogger> Operations
+        {
+            get { lock (operations) return operations.ToArray(); }
+        }
 
         public ManagerLogger(IPackageManager manager)
         {
             Manager = manager;
         }
 
+        private void Register(TaskLogger operation)
+        {
+            lock (operations)
+            {
+                operations.Add(operation);
+                if (operations.Count > MAX_RETAINED_OPERATIONS)
+                    operations.RemoveRange(0, operations.Count - MAX_RETAINED_OPERATIONS);
+            }
+        }
+
         public IProcessTaskLogger CreateNew(LoggableTaskType type, Process process)
         {
             if (process.StartInfo is null)
             {
-                throw new InvalidOperationException("Given process instance did not have a valid StartInfo value");
+                throw new InvalidOperationException(
+                    "Given process instance did not have a valid StartInfo value"
+                );
             }
 
-            ProcessTaskLogger operation = new(Manager, type, process.StartInfo.FileName, process.StartInfo.Arguments);
-            operations.Add(operation);
+            ProcessTaskLogger operation = new(
+                Manager,
+                type,
+                process.StartInfo.FileName,
+                process.StartInfo.Arguments
+            );
+            Register(operation);
             return operation;
         }
 
         public INativeTaskLogger CreateNew(LoggableTaskType type)
         {
             NativeTaskLogger operation = new(Manager, type);
-            operations.Add(operation);
+            Register(operation);
             return operation;
         }
     }
 
     public abstract class TaskLogger : ITaskLogger
     {
+        // Cap retained output per stream (chunk-trimmed to keep appending O(1)); a search can emit thousands of lines.
+        protected const int MaxRetainedLines = 1000;
+        private const int TrimSlack = 256;
+
+        protected static void AppendCapped(List<string> target, string line)
+        {
+            target.Add(line);
+            if (target.Count > MaxRetainedLines + TrimSlack)
+                target.RemoveRange(0, target.Count - MaxRetainedLines);
+        }
+
         protected DateTime StartTime;
         protected DateTime? EndTime;
         protected bool isComplete;
@@ -96,7 +130,12 @@ namespace UniGetUI.PackageEngine.ManagerClasses.Classes
         private readonly List<string> StdOut = [];
         private readonly List<string> StdErr = [];
 
-        public ProcessTaskLogger(IPackageManager manager, LoggableTaskType type, string executable, string arguments)
+        public ProcessTaskLogger(
+            IPackageManager manager,
+            LoggableTaskType type,
+            string executable,
+            string arguments
+        )
         {
             Type = type;
             Manager = manager;
@@ -116,7 +155,9 @@ namespace UniGetUI.PackageEngine.ManagerClasses.Classes
         {
             if (!isOpen)
             {
-                throw new InvalidOperationException("Attempted to write log into an already-closed ProcessTaskLogger");
+                throw new InvalidOperationException(
+                    "Attempted to write log into an already-closed ProcessTaskLogger"
+                );
             }
 
             foreach (string line in lines)
@@ -140,14 +181,16 @@ namespace UniGetUI.PackageEngine.ManagerClasses.Classes
         {
             if (!isOpen)
             {
-                throw new InvalidOperationException("Attempted to write log into an already-closed ProcessTaskLogger");
+                throw new InvalidOperationException(
+                    "Attempted to write log into an already-closed ProcessTaskLogger"
+                );
             }
 
             foreach (string line in lines)
             {
                 if (line != "")
                 {
-                    StdOut.Add(line);
+                    AppendCapped(StdOut, line);
                 }
             }
         }
@@ -164,14 +207,16 @@ namespace UniGetUI.PackageEngine.ManagerClasses.Classes
         {
             if (!isOpen)
             {
-                throw new InvalidOperationException("Attempted to write log into an already-closed ProcessTaskLogger");
+                throw new InvalidOperationException(
+                    "Attempted to write log into an already-closed ProcessTaskLogger"
+                );
             }
 
             foreach (string line in lines)
             {
                 if (line != "")
                 {
-                    StdErr.Add(line);
+                    AppendCapped(StdErr, line);
                 }
             }
         }
@@ -194,7 +239,9 @@ namespace UniGetUI.PackageEngine.ManagerClasses.Classes
                 $"0Subprocess executable: \"{Executable}\"",
                 $"0Command-line arguments: \"{Arguments}\"",
                 $"0Process start time: {StartTime}",
-                EndTime is null ? "2Process end time:   UNFINISHED" : $"0Process end time:   {EndTime}",
+                EndTime is null
+                    ? "2Process end time:   UNFINISHED"
+                    : $"0Process end time:   {EndTime}",
             ];
 
             if (StdIn.Count > 0)
@@ -253,12 +300,17 @@ namespace UniGetUI.PackageEngine.ManagerClasses.Classes
             }
             else
             {
-                result.Add($"2Return code: FAILED (0x{(uint)ReturnCode:X}, {(uint)ReturnCode}, {ReturnCode})");
+                result.Add(
+                    $"2Return code: FAILED (0x{(uint)ReturnCode:X}, {(uint)ReturnCode}, {ReturnCode})"
+                );
             }
 
             result.Add("0");
             result.Add("0——————————————————————————————————————————");
             result.Add("0");
+
+            for (int i = 0; i < result.Count; i++)
+                result[i] = Logger.Redact(result[i]);
 
             if (verbose)
             {
@@ -287,14 +339,16 @@ namespace UniGetUI.PackageEngine.ManagerClasses.Classes
         {
             if (!isOpen)
             {
-                throw new InvalidOperationException("Attempted to write log into an already-closed NativeTaskLogger");
+                throw new InvalidOperationException(
+                    "Attempted to write log into an already-closed NativeTaskLogger"
+                );
             }
 
             foreach (string line in lines)
             {
                 if (line != "")
                 {
-                    Info.Add(line);
+                    AppendCapped(Info, line);
                 }
             }
         }
@@ -311,14 +365,16 @@ namespace UniGetUI.PackageEngine.ManagerClasses.Classes
         {
             if (!isOpen)
             {
-                throw new InvalidOperationException("Attempted to write log into an already-closed NativeTaskLogger");
+                throw new InvalidOperationException(
+                    "Attempted to write log into an already-closed NativeTaskLogger"
+                );
             }
 
             foreach (string line in lines)
             {
                 if (line != "")
                 {
-                    Errors.Add(line);
+                    AppendCapped(Errors, line);
                 }
             }
         }
@@ -355,7 +411,9 @@ namespace UniGetUI.PackageEngine.ManagerClasses.Classes
             [
                 $"0Logged native task on manager {Manager.Name}. Task type is {Type}",
                 $"0Process start time: {StartTime}",
-                EndTime is null ? "2Process end time:   UNFINISHED" : $"0Process end time:   {EndTime}",
+                EndTime is null
+                    ? "2Process end time:   UNFINISHED"
+                    : $"0Process end time:   {EndTime}",
             ];
 
             if (Info.Count > 0)
@@ -398,12 +456,17 @@ namespace UniGetUI.PackageEngine.ManagerClasses.Classes
             }
             else
             {
-                result.Add($"2The task reported a failure (0x{(uint)ReturnCode:X}, {(uint)ReturnCode}, {ReturnCode})");
+                result.Add(
+                    $"2The task reported a failure (0x{(uint)ReturnCode:X}, {(uint)ReturnCode}, {ReturnCode})"
+                );
             }
 
             result.Add("0");
             result.Add("0——————————————————————————————————————————");
             result.Add("0");
+
+            for (int i = 0; i < result.Count; i++)
+                result[i] = Logger.Redact(result[i]);
 
             if (verbose)
             {

@@ -10,6 +10,8 @@ using UniGetUI.PackageEngine.Classes.Packages;
 using UniGetUI.PackageEngine.Classes.Packages.Classes;
 using UniGetUI.PackageEngine.Classes.Serializable;
 using UniGetUI.PackageEngine.Interfaces;
+using UniGetUI.PackageEngine.PackageLoader;
+using UniGetUI.PackageEngine.Serializable;
 using UniGetUI.PackageEngine.Structs;
 
 namespace UniGetUI.PackageEngine.PackageClasses
@@ -21,12 +23,19 @@ namespace UniGetUI.PackageEngine.PackageClasses
         public event PropertyChangedEventHandler? PropertyChanged;
         private PackageTag __tag;
 
-        private readonly long __hash;
-        private readonly long __versioned_hash;
-        private readonly string ignoredId;
+        private readonly long _hash;
+        private readonly long _versionedHash;
+        private readonly string _ignoredId;
         private readonly string _iconId;
 
-        private static readonly ConcurrentDictionary<int, Uri?> _cachedIconPaths = new();
+        private static readonly ConcurrentDictionary<long, Uri> _cachedIconPaths = new();
+        private static readonly ConcurrentDictionary<long, long> _failedIconLookups = new();
+        private static readonly TimeSpan _iconLookupRetryInterval = TimeSpan.FromMinutes(5);
+
+        public static TimeSpan? TEST_IconLookupRetryIntervalOverride { private get; set; }
+
+        private static TimeSpan IconLookupRetryInterval =>
+            TEST_IconLookupRetryIntervalOverride ?? _iconLookupRetryInterval;
 
         private IPackageDetails? __details;
         public IPackageDetails Details
@@ -37,21 +46,34 @@ namespace UniGetUI.PackageEngine.PackageClasses
         public PackageTag Tag
         {
             get => __tag;
-            set { __tag = value; OnPropertyChanged(); }
+            set
+            {
+                __tag = value;
+                OnPropertyChanged();
+            }
         }
 
         public bool IsChecked
         {
             get => __is_checked;
-            set { __is_checked = value; OnPropertyChanged(); }
+            set
+            {
+                __is_checked = value;
+                OnPropertyChanged();
+            }
         }
 
-        private OverridenInstallationOptions _overriden_options;
-        public ref OverridenInstallationOptions OverridenOptions { get => ref _overriden_options; }
+        private OverridenInstallationOptions _overridenOptions;
+        public ref OverridenInstallationOptions OverridenOptions
+        {
+            get => ref _overridenOptions;
+        }
         public string Name { get; }
         public string AutomationName { get; }
         public string Id { get; }
         public virtual string VersionString { get; }
+
+        public virtual bool HasConcreteVersion => true;
         public CoreTools.Version NormalizedVersion { get; }
         public CoreTools.Version NormalizedNewVersion { get; }
         public bool IsPopulated { get; set; }
@@ -73,47 +95,11 @@ namespace UniGetUI.PackageEngine.PackageClasses
             string version,
             IManagerSource source,
             IPackageManager manager,
-            OverridenInstallationOptions? options = null)
+            OverridenInstallationOptions? options = null
+        )
+            : this(name, id, version, version, source, manager, options)
         {
-            Name = name;
-            Id = id;
-            VersionString = version;
-            NormalizedVersion = CoreTools.VersionStringToStruct(version);
-            Source = source;
-            Manager = manager;
-
-            if (options is not null)
-            {
-                _overriden_options = (OverridenInstallationOptions)options;
-            }
-
-            NewVersionString = "";
-            Tag = PackageTag.Default;
-            AutomationName = CoreTools.Translate("Package {name} from {manager}",
-                new Dictionary<string, object?> { { "name", Name }, { "manager", Source.AsString_DisplayName } });
-
-            __hash = CoreTools.HashStringAsLong(Manager.Name + "\\" + Source.AsString_DisplayName + "\\" + Id);
-            __versioned_hash = CoreTools.HashStringAsLong(Manager.Name + "\\" + Source.AsString_DisplayName + "\\" + Id + "\\" + (this as Package).VersionString);
             IsUpgradable = false;
-
-            ignoredId = IgnoredUpdatesDatabase.GetIgnoredIdForPackage(this);
-
-            _iconId = Manager.Name switch
-            {
-                "Winget" => Source.Name switch
-                {
-                    "Steam" => id.ToLower().Split("\\")[^1].Replace("steam app ", "steam-").Trim(),
-                    "Local PC" => id.ToLower().Split("\\")[^1],
-                    "Microsoft Store" => id.IndexOf('_') < id.IndexOf('.') ? // If the first underscore is before the period, this ID has no publisher
-                        string.Join('_', id.ToLower().Split("\\")[1].Split("_")[0..^4]) : // no publisher: remove `MSIX\`, then the standard ending _version_arch__{random id}
-                        string.Join('_', string.Join('.', id.ToLower().Split(".")[1..]).Split("_")[0..^4]), // remove the publisher (before the first .), then the standard _version_arch__{random id}
-                    _ => string.Join('.', id.ToLower().Split(".")[1..]),
-                },
-                "Scoop" => id.ToLower().Replace(".app", ""),
-                "Chocolatey" => id.ToLower().Replace(".install", "").Replace(".portable", ""),
-                "vcpkg" => id.ToLower().Split(":")[0].Split("[")[0],
-                _ => id.ToLower()
-            };
         }
 
         /// <summary>
@@ -126,25 +112,44 @@ namespace UniGetUI.PackageEngine.PackageClasses
             string new_version,
             IManagerSource source,
             IPackageManager manager,
-            OverridenInstallationOptions? options = null)
-            : this(name, id, installed_version, source, manager, options)
+            OverridenInstallationOptions? options = null
+        )
         {
-            IsUpgradable = true;
+            Name = name;
+            Id = id;
+            VersionString = installed_version;
+            NormalizedVersion = CoreTools.VersionStringToStruct(installed_version);
             NewVersionString = new_version;
             NormalizedNewVersion = CoreTools.VersionStringToStruct(new_version);
+            Source = source;
+            Manager = manager;
+
+            IsUpgradable = true;
+            Tag = PackageTag.Default;
+
+            AutomationName = CoreTools
+                .Translate("Package {name} from {manager}")
+                .Replace("{name}", name)
+                .Replace("{manager}", Source.AsString_DisplayName);
+
+            _overridenOptions = options ?? _overridenOptions;
+            _hash = CoreTools.HashStringAsLong(
+                $"{Manager.Name}\\{Source.AsString_DisplayName}\\{Id}"
+            );
+            _versionedHash = CoreTools.HashStringAsLong(
+                $"{Manager.Name}\\{Source.AsString_DisplayName}\\{Id}\\{installed_version}"
+            );
+            _ignoredId = IgnoredUpdatesDatabase.GetIgnoredIdForPackage(this);
+            _iconId = GenerateIconId(this);
         }
 
-        public long GetHash()
-            => __hash;
+        public long GetHash() => _hash;
 
-        public long GetVersionedHash()
-            => __versioned_hash;
+        public long GetVersionedHash() => _versionedHash;
 
-        public bool Equals(IPackage? other)
-            => __versioned_hash == other?.GetHash();
+        public bool Equals(IPackage? other) => _versionedHash == other?.GetHash();
 
-        public override int GetHashCode()
-            => (int)__versioned_hash;
+        public override int GetHashCode() => (int)_versionedHash;
 
         /// <summary>
         /// Check whether two package instances represent the same package.
@@ -155,11 +160,9 @@ namespace UniGetUI.PackageEngine.PackageClasses
         /// </summary>
         /// <param name="other">A package</param>
         /// <returns>Whether the two instances refer to the same instance</returns>
-        public bool IsEquivalentTo(IPackage? other)
-            => __hash == other?.GetHash();
+        public bool IsEquivalentTo(IPackage? other) => _hash == other?.GetHash();
 
-        public string GetIconId()
-            => _iconId;
+        public string GetIconId() => _iconId;
 
         public virtual Uri GetIconUrl()
         {
@@ -168,12 +171,30 @@ namespace UniGetUI.PackageEngine.PackageClasses
 
         public virtual Uri? GetIconUrlIfAny()
         {
-            if (_cachedIconPaths.TryGetValue(this.GetHashCode(), out Uri? path))
+            long cacheKey = _versionedHash;
+            if (_cachedIconPaths.TryGetValue(cacheKey, out Uri? path))
             {
                 return path;
             }
+
+            if (
+                _failedIconLookups.TryGetValue(cacheKey, out long failedAt)
+                && Environment.TickCount64 - failedAt
+                    < (long)IconLookupRetryInterval.TotalMilliseconds
+            )
+            {
+                return null;
+            }
+
             var CachedIcon = LoadIconUrlIfAny();
-            _cachedIconPaths.TryAdd(this.GetHashCode(), CachedIcon);
+            if (CachedIcon is null)
+            {
+                _failedIconLookups[cacheKey] = Environment.TickCount64;
+                return null;
+            }
+
+            _failedIconLookups.TryRemove(cacheKey, out _);
+            _cachedIconPaths[cacheKey] = CachedIcon;
             return CachedIcon;
         }
 
@@ -181,9 +202,12 @@ namespace UniGetUI.PackageEngine.PackageClasses
         {
             try
             {
-                CacheableIcon? icon = TaskRecycler<CacheableIcon?>.RunOrAttach(Manager.DetailsHelper.GetIcon, this);
-                string? path = IconCacheEngine.GetCacheOrDownloadIcon(icon, Manager.Name, _iconId);
-                return path is null? null: new Uri("file:///" + path);
+                CacheableIcon? icon = TaskRecycler<CacheableIcon?>.RunOrAttach(
+                    Manager.DetailsHelper.GetIcon,
+                    this
+                );
+                string? path = IconCacheEngine.GetCacheOrDownloadIcon(icon, Manager.Name, Id);
+                return path is null ? null : new Uri((path.StartsWith('/') ? "file://" : "file:///") + path);
             }
             catch (Exception ex)
             {
@@ -202,8 +226,9 @@ namespace UniGetUI.PackageEngine.PackageClasses
         {
             try
             {
-                await Task.Run(() => IgnoredUpdatesDatabase.Add(ignoredId, version));
-                GetInstalledPackage()?.SetTag(PackageTag.Pinned);
+                await Task.Run(() => IgnoredUpdatesDatabase.Add(_ignoredId, version));
+                foreach (var p in GetInstalledPackages())
+                    p.SetTag(PackageTag.Pinned);
             }
             catch (Exception ex)
             {
@@ -216,8 +241,9 @@ namespace UniGetUI.PackageEngine.PackageClasses
         {
             try
             {
-                await Task.Run(() => IgnoredUpdatesDatabase.Remove(ignoredId));
-                GetInstalledPackage()?.SetTag(PackageTag.Default);
+                await Task.Run(() => IgnoredUpdatesDatabase.Remove(_ignoredId));
+                foreach (var p in GetInstalledPackages())
+                    p.SetTag(PackageTag.Default);
             }
             catch (Exception ex)
             {
@@ -236,7 +262,9 @@ namespace UniGetUI.PackageEngine.PackageClasses
         {
             try
             {
-                return await Task.Run(() => IgnoredUpdatesDatabase.HasUpdatesIgnored(ignoredId, version));
+                return await Task.Run(() =>
+                    IgnoredUpdatesDatabase.HasUpdatesIgnored(_ignoredId, version)
+                );
             }
             catch (Exception ex)
             {
@@ -244,7 +272,6 @@ namespace UniGetUI.PackageEngine.PackageClasses
                 Logger.Error(ex);
                 return false;
             }
-
         }
 
         /// <summary>
@@ -256,7 +283,8 @@ namespace UniGetUI.PackageEngine.PackageClasses
         {
             try
             {
-                return await Task.Run(() => IgnoredUpdatesDatabase.GetIgnoredVersion(ignoredId)) ?? "";
+                return await Task.Run(() => IgnoredUpdatesDatabase.GetIgnoredVersion(_ignoredId))
+                    ?? "";
             }
             catch (Exception ex)
             {
@@ -271,14 +299,14 @@ namespace UniGetUI.PackageEngine.PackageClasses
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         }
 
-        public IPackage? GetInstalledPackage()
-            => PackageCacher.GetInstalledPackageOrNull(this);
+        public IPackage? GetAvailablePackage() =>
+            DiscoverablePackagesLoader.Instance.GetEquivalentPackage(this);
 
-        public IPackage? GetAvailablePackage()
-            => PackageCacher.GetAvailablePackageOrNull(this);
+        public IPackage? GetUpgradablePackage() =>
+            UpgradablePackagesLoader.Instance.GetEquivalentPackage(this);
 
-        public IPackage? GetUpgradablePackage()
-            => PackageCacher.GetUpgradablePackageOrNull(this);
+        public IReadOnlyList<IPackage> GetInstalledPackages() =>
+            InstalledPackagesLoader.Instance.GetEquivalentPackages(this);
 
         public virtual void SetTag(PackageTag tag)
         {
@@ -287,21 +315,96 @@ namespace UniGetUI.PackageEngine.PackageClasses
 
         public virtual bool NewerVersionIsInstalled()
         {
+            foreach (var p in GetInstalledPackages())
+            {
+                if (Manager.CompareVersions(p.VersionString, this.NewVersionString) is not { } comparison)
+                {
+                    continue;
+                }
+
+                if (comparison >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private string ResolveInstallerVersion()
+        {
+            if (Manager.InstallerUrlFollowsPackageVersion)
+                return VersionString;
+
+            if (IsUpgradable)
+                return NewVersionString;
+
+            if (GetUpgradablePackage() is { } upgradable)
+                return upgradable.NewVersionString;
+
+            if (GetAvailablePackage() is { } available)
+                return available.VersionString;
+
+            return VersionString;
+        }
+
+        public async Task<string?> GetInstallerFileName()
+        {
+            var scheme = InstallerFileNaming.ResolveScheme();
+            string version = scheme is InstallerNameScheme.PublisherName
+                ? ""
+                : ResolveInstallerVersion();
+
+            if (Manager.Name.StartsWith("PowerShell") || Manager.Name.StartsWith(".NET"))
+            {
+                return InstallerFileNaming.Build(
+                    $"{Id}.nupkg",
+                    Name,
+                    Id,
+                    version,
+                    "nupkg",
+                    scheme
+                );
+            }
+            else
+            {
+                if (!Details.IsPopulated)
+                    await Details.Load();
+                if (Details.InstallerUrl is null)
+                    return null;
+                return InstallerFileNaming.Build(
+                    await CoreTools.GetFileNameAsync(Details.InstallerUrl),
+                    Name,
+                    Id,
+                    version,
+                    Details.InstallerType,
+                    scheme
+                );
+            }
+        }
+
+        // 1-based position of the most significant version component that changed
+        // (1=Major, 2=Minor, 3=Patch, 4=Remainder), or 0 if identical/unparseable.
+        private int HighestChangedVersionComponent()
+        {
+            if (NormalizedVersion == CoreTools.Version.Null || NormalizedNewVersion == CoreTools.Version.Null)
+                return 0;
+            return NormalizedVersion.FirstDifferingComponent(NormalizedNewVersion);
+        }
+
+        public virtual bool IsUpdateMinor(int level = InstallOptions.DefaultSkipMinorLevel)
+        {
             if (!IsUpgradable)
                 return false;
 
-            return PackageCacher.NewerVersionIsInstalled(this);
+            int changed = HighestChangedVersionComponent();
+            return changed >= level;
         }
 
-        public virtual bool IsUpdateMinor()
-        {
-            if (!IsUpgradable) return false;
+        public virtual Task<InstallOptions> GetInstallOptions() =>
+            InstallOptionsFactory.LoadApplicableAsync(this);
 
-            return NormalizedVersion.Major == NormalizedNewVersion.Major && NormalizedVersion.Minor == NormalizedNewVersion.Minor &&
-                   (NormalizedVersion.Patch != NormalizedNewVersion.Patch || NormalizedVersion.Remainder != NormalizedNewVersion.Remainder);
-        }
-
-        public virtual SerializablePackage AsSerializable()
+        public virtual async Task<SerializablePackage> AsSerializableAsync()
         {
             return new SerializablePackage
             {
@@ -309,13 +412,13 @@ namespace UniGetUI.PackageEngine.PackageClasses
                 Name = Name,
                 Version = VersionString,
                 Source = Source.Name,
-                ManagerName = Manager.Name,
-                InstallationOptions = InstallationOptions.FromPackage(this).AsSerializable(),
+                ManagerName = Manager.Id,
+                InstallationOptions = await InstallOptionsFactory.LoadForPackageAsync(this),
                 Updates = new SerializableUpdatesOptions
                 {
-                    IgnoredVersion = GetIgnoredUpdatesVersionAsync().GetAwaiter().GetResult(),
-                    UpdatesIgnored = HasUpdatesIgnoredAsync().GetAwaiter().GetResult(),
-                }
+                    IgnoredVersion = await GetIgnoredUpdatesVersionAsync(),
+                    UpdatesIgnored = await HasUpdatesIgnoredAsync(),
+                },
             };
         }
 
@@ -333,7 +436,55 @@ namespace UniGetUI.PackageEngine.PackageClasses
         public static void ResetIconCache()
         {
             _cachedIconPaths.Clear();
+            _failedIconLookups.Clear();
+        }
+
+        private static string GenerateIconId(Package p)
+        {
+            string iconId;
+            try
+            {
+                iconId = p.Manager.Name switch
+                {
+                    "Winget" => p.Source.Name switch
+                    {
+                        "Steam" => p
+                            .Id.ToLower()
+                            .Split("\\")[^1]
+                            .Replace("steam app ", "steam-")
+                            .Trim(),
+                        "Local PC" => p.Id.Split("\\")[^1],
+                        // If the first underscore is before the period, this ID has no publisher
+                        "Microsoft Store" => p.Id.IndexOf('_') < p.Id.IndexOf('.')
+                            ?
+                            // no publisher: remove `MSIX\`, then the standard ending _version_arch__{random p.Id}
+                            string.Join('_', p.Id.Split("\\")[1].Split("_")[0..^4])
+                            :
+                            // remove the publisher (before the first .), then the standard _version_arch__{random p.Id}
+                            string.Join(
+                                '_',
+                                string.Join('.', p.Id.Split(".")[1..]).Split("_")[0..^4]
+                            ),
+                        _ => string.Join('.', p.Id.Split(".")[1..]),
+                    },
+                    "Scoop" => p.Id.Replace(".app", ""),
+                    "Chocolatey" => p.Id.Replace(".install", "").Replace(".portable", ""),
+                    "vcpkg" => p.Id.Split(":")[0].Split("[")[0],
+                    _ => p.Id,
+                };
+            }
+            catch
+            {
+                iconId = p.Id;
+            }
+
+            return iconId
+                .ToLower()
+                .Replace('_', '-')
+                .Replace('.', '-')
+                .Replace(' ', '-')
+                .Replace('/', '-')
+                .Replace(',', '-');
         }
     }
 }
-

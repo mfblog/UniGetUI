@@ -1,24 +1,25 @@
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using UniGetUI.Core.Tools;
 using UniGetUI.Interface.Enums;
 using UniGetUI.PackageEngine.Classes.Manager;
 using UniGetUI.PackageEngine.Classes.Manager.ManagerHelpers;
 using UniGetUI.PackageEngine.Enums;
+using UniGetUI.PackageEngine.Interfaces;
 using UniGetUI.PackageEngine.ManagerClasses.Classes;
 using UniGetUI.PackageEngine.ManagerClasses.Manager;
 using UniGetUI.PackageEngine.Managers.Chocolatey;
 using UniGetUI.PackageEngine.Managers.PowerShellManager;
 using UniGetUI.PackageEngine.PackageClasses;
 using UniGetUI.PackageEngine.Structs;
+using Architecture = UniGetUI.PackageEngine.Enums.Architecture;
 
 namespace UniGetUI.PackageEngine.Managers.DotNetManager
 {
     public class DotNet : BaseNuGet
     {
-        public static new string[] FALSE_PACKAGE_IDS = [""];
-        public static new string[] FALSE_PACKAGE_VERSIONS = [""];
+        public static string[] FALSE_PACKAGE_IDS = [""];
+        public static string[] FALSE_PACKAGE_VERSIONS = [""];
 
         public DotNet()
         {
@@ -28,155 +29,216 @@ namespace UniGetUI.PackageEngine.Managers.DotNetManager
                 CanDownloadInstaller = true,
                 SupportsCustomScopes = true,
                 SupportsCustomArchitectures = true,
-                SupportedCustomArchitectures = [Architecture.X86, Architecture.X64, Architecture.Arm64, Architecture.Arm],
+                SupportedCustomArchitectures =
+                [
+                    Architecture.x86,
+                    Architecture.x64,
+                    Architecture.arm64,
+                    Architecture.arm32,
+                ],
                 SupportsPreRelease = true,
+                CanListDependencies = true,
                 SupportsCustomLocations = true,
                 SupportsCustomPackageIcons = true,
                 SupportsCustomVersions = true,
                 SupportsProxy = ProxySupport.Partially,
-                SupportsProxyAuth = true
+                SupportsProxyAuth = true,
+                KnowsPackageReleaseDate = PackageReleaseDateSupport.Yes,
             };
 
             Properties = new ManagerProperties
             {
+                Id = "dotnet-tool",
                 Name = ".NET Tool",
-                Description = CoreTools.Translate("A repository full of tools and executables designed with Microsoft's .NET ecosystem in mind.<br>Contains: <b>.NET related tools and scripts</b>"),
+                Description = CoreTools.Translate(
+                    "A repository full of tools and executables designed with Microsoft's .NET ecosystem in mind.<br>Contains: <b>.NET related tools and scripts</b>"
+                ),
                 IconId = IconType.DotNet,
                 ColorIconId = "dotnet_color",
                 ExecutableFriendlyName = "dotnet tool",
                 InstallVerb = "install",
                 UninstallVerb = "uninstall",
                 UpdateVerb = "update",
-                ExecutableCallArgs = "tool",
-                DefaultSource = new ManagerSource(this, "nuget.org", new Uri("https://www.nuget.org/api/v2")),
-                KnownSources = [new ManagerSource(this, "nuget.org", new Uri("https://www.nuget.org/api/v2"))],
+                DefaultSource = new ManagerSource(
+                    this,
+                    "nuget.org",
+                    new Uri("https://api.nuget.org/v3/index.json")
+                ),
+                KnownSources =
+                [
+                    new ManagerSource(
+                        this,
+                        "nuget.org",
+                        new Uri("https://api.nuget.org/v3/index.json")
+                    ),
+                ],
             };
 
             DetailsHelper = new DotNetDetailsHelper(this);
             OperationHelper = new DotNetPkgOperationHelper(this);
         }
 
+        protected override string? V3PackageType => "DotnetTool";
+
         protected override IReadOnlyList<Package> _getInstalledPackages_UnSafe()
         {
             List<Package> Packages = [];
-            foreach (var options in new OverridenInstallationOptions[] { new(PackageScope.Local), new(PackageScope.Global) })
+            foreach (
+                var options in new OverridenInstallationOptions[]
+                {
+                    new(PackageScope.Local),
+                    new(PackageScope.Global),
+                }
+            )
             {
                 using Process p = new()
                 {
                     StartInfo = new ProcessStartInfo
                     {
                         FileName = Status.ExecutablePath,
-                        Arguments = Properties.ExecutableCallArgs + " list" + (options.Scope == PackageScope.Global ? " --global" : ""),
+                        Arguments =
+                            Status.ExecutableCallArgs
+                            + " list"
+                            + (options.Scope == PackageScope.Global ? " --global" : ""),
                         RedirectStandardOutput = true,
                         RedirectStandardError = true,
                         UseShellExecute = false,
                         CreateNoWindow = true,
-                        StandardOutputEncoding = System.Text.Encoding.UTF8
-                    }
+                        StandardOutputEncoding = System.Text.Encoding.UTF8,
+                    },
                 };
 
-                IProcessTaskLogger logger = TaskLogger.CreateNew(LoggableTaskType.ListInstalledPackages, p);
+                IProcessTaskLogger logger = TaskLogger.CreateNew(
+                    LoggableTaskType.ListInstalledPackages,
+                    p
+                );
                 p.Start();
 
+                List<string> outputLines = [];
                 string? line;
-                bool DashesPassed = false;
                 while ((line = p.StandardOutput.ReadLine()) is not null)
                 {
                     logger.AddToStdOut(line);
-                    if (!DashesPassed)
-                    {
-                        if (line.Contains("----"))
-                        {
-                            DashesPassed = true;
-                        }
-                    }
-                    else
-                    {
-                        string[] elements = Regex.Replace(line, " {2,}", " ").Split(' ');
-                        if (elements.Length < 2)
-                        {
-                            continue;
-                        }
-
-                        for (int i = 0; i < elements.Length; i++)
-                        {
-                            elements[i] = elements[i].Trim();
-                        }
-
-                        if (FALSE_PACKAGE_IDS.Contains(elements[0]) || FALSE_PACKAGE_VERSIONS.Contains(elements[1]))
-                        {
-                            continue;
-                        }
-
-                        Packages.Add(new Package(
-                            CoreTools.FormatAsName(elements[0]),
-                            elements[0],
-                            elements[1],
-                            DefaultSource,
-                            this,
-                            options
-                        ));
-                    }
+                    outputLines.Add(line);
                 }
                 logger.AddToStdErr(p.StandardError.ReadToEnd());
                 p.WaitForExit();
                 logger.Close(p.ExitCode);
+
+                Packages.AddRange(ParseInstalledPackages(outputLines, DefaultSource, this, options));
             }
             return Packages;
         }
 
-        protected override ManagerStatus LoadManager()
+        public override IReadOnlyList<string> FindCandidateExecutableFiles() =>
+            CoreTools.WhichMultiple(OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet");
+
+        protected override void _loadManagerExecutableFile(
+            out bool found,
+            out string path,
+            out string callArguments
+        )
         {
-            ManagerStatus status = new();
+            var (_found, _path) = GetExecutableFile();
+            found = _found;
+            path = _path;
+            callArguments = "tool ";
 
-            var (found, path) = CoreTools.Which("dotnet.exe");
-            status.ExecutablePath = path;
-            status.Found = found;
-
-            if (!status.Found)
-            {
-                return status;
-            }
-
-            Process process = new()
+            // Ensure .NET SDK is installed
+            if (!found)
+                return;
+            var process = new Process()
             {
                 StartInfo = new ProcessStartInfo
                 {
-                    FileName = status.ExecutablePath,
-                    Arguments = "tool -h",
+                    FileName = path,
+                    Arguments = callArguments + "-h",
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     CreateNoWindow = true,
-                    StandardOutputEncoding = System.Text.Encoding.UTF8
-                }
+                    StandardOutputEncoding = System.Text.Encoding.UTF8,
+                },
             };
             process.Start();
             process.WaitForExit();
-            if (process.ExitCode != 0)
-            {
-                status.Found = false;
-                return status;
-            }
+            found = process.ExitCode is 0;
+        }
 
-            process = new()
+        protected override void _loadManagerVersion(out string version)
+        {
+            var process = new Process()
             {
                 StartInfo = new ProcessStartInfo
                 {
-                    FileName = status.ExecutablePath,
+                    FileName = Status.ExecutablePath,
                     Arguments = "--version",
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     CreateNoWindow = true,
-                    StandardOutputEncoding = System.Text.Encoding.UTF8
-                }
+                    StandardOutputEncoding = System.Text.Encoding.UTF8,
+                },
             };
 
             process.Start();
-            status.Version = process.StandardOutput.ReadToEnd().Trim();
+            version = process.StandardOutput.ReadToEnd().Trim();
+        }
 
-            return status;
+        internal static IReadOnlyList<Package> ParseInstalledPackages(
+            IEnumerable<string> outputLines,
+            IManagerSource source,
+            IPackageManager manager,
+            OverridenInstallationOptions options
+        )
+        {
+            List<Package> packages = [];
+            bool dashesPassed = false;
+
+            foreach (string rawLine in outputLines)
+            {
+                if (!dashesPassed)
+                {
+                    if (rawLine.Contains("----"))
+                    {
+                        dashesPassed = true;
+                    }
+
+                    continue;
+                }
+
+                string[] elements = Regex.Replace(rawLine, " {2,}", " ").Split(' ');
+                if (elements.Length < 2)
+                {
+                    continue;
+                }
+
+                for (int i = 0; i < elements.Length; i++)
+                {
+                    elements[i] = elements[i].Trim();
+                }
+
+                if (
+                    FALSE_PACKAGE_IDS.Contains(elements[0])
+                    || FALSE_PACKAGE_VERSIONS.Contains(elements[1])
+                )
+                {
+                    continue;
+                }
+
+                packages.Add(
+                    new Package(
+                        CoreTools.FormatAsName(elements[0]),
+                        elements[0],
+                        elements[1],
+                        source,
+                        manager,
+                        options
+                    )
+                );
+            }
+
+            return packages;
         }
     }
 }

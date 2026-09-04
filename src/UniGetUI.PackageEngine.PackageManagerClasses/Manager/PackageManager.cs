@@ -1,5 +1,9 @@
+using System.Diagnostics;
+using System.Text;
 using UniGetUI.Core.Logging;
 using UniGetUI.Core.SettingsEngine;
+using UniGetUI.Core.SettingsEngine.SecureSettings;
+using UniGetUI.Core.Tools;
 using UniGetUI.PackageEngine.Classes.Manager;
 using UniGetUI.PackageEngine.Classes.Manager.Classes;
 using UniGetUI.PackageEngine.Classes.Manager.ManagerHelpers;
@@ -18,17 +22,47 @@ namespace UniGetUI.PackageEngine.ManagerClasses.Manager
         public ManagerProperties Properties { get; set; } = new(IsDummy: true);
         public ManagerCapabilities Capabilities { get; set; } = new(IsDummy: true);
         public ManagerStatus Status { get; set; } = new() { Found = false };
-        public string Name { get => Properties.Name; }
-        public string DisplayName { get => Properties.DisplayName ?? Name; }
-        public IManagerSource DefaultSource { get => Properties.DefaultSource; }
-        public bool ManagerReady { get; set; }
+        public string Id
+        {
+            get => string.IsNullOrWhiteSpace(Properties.Id) ? Name : Properties.Id;
+        }
+        public string Name
+        {
+            get => Properties.Name;
+        }
+        public string DisplayName
+        {
+            get => Properties.DisplayName ?? Name;
+        }
+        public IManagerSource DefaultSource
+        {
+            get => Properties.DefaultSource;
+        }
         public IManagerLogger TaskLogger { get; }
         public IReadOnlyList<ManagerDependency> Dependencies { get; protected set; } = [];
         public IMultiSourceHelper SourcesHelper { get; protected set; } = new NullSourceHelper();
         public IPackageDetailsHelper DetailsHelper { get; protected set; } = null!;
         public IPackageOperationHelper OperationHelper { get; protected set; } = null!;
+        public virtual Encoding OutputEncoding => Encoding.UTF8;
+        public virtual bool InstallerUrlFollowsPackageVersion => false;
+
+        public virtual bool CommandLineIsShellInterpreted => false;
+
+        public virtual bool IdentifiersAreQuotedOnCommandLine => false;
+
+        public virtual int? CompareVersions(string versionA, string versionB)
+        {
+            var parsedA = CoreTools.VersionStringToStruct(versionA);
+            var parsedB = CoreTools.VersionStringToStruct(versionB);
+
+            if (parsedA == CoreTools.Version.Null || parsedB == CoreTools.Version.Null)
+                return null;
+
+            return parsedA.CompareTo(parsedB);
+        }
 
         private readonly bool _baseConstructorCalled;
+        private bool _ready;
 
         public PackageManager()
         {
@@ -41,92 +75,217 @@ namespace UniGetUI.PackageEngine.ManagerClasses.Manager
             throw new InvalidDataException(message);
         }
 
+        protected abstract void _loadManagerExecutableFile(
+            out bool found,
+            out string path,
+            out string callArguments
+        );
+        protected abstract void _loadManagerVersion(out string version);
+
         /// <summary>
-        /// Initializes the Package Manager (asynchronously). Must be run before using any other method of the manager.
+        /// The argument vector that precedes the operation parameters, for managers whose command
+        /// line must be built with <see cref="System.Diagnostics.ProcessStartInfo.ArgumentList"/>
+        /// instead of a single concatenated string. An empty vector selects the concatenated
+        /// <see cref="ManagerStatus.ExecutableCallArgs"/> path.
         /// </summary>
+        protected virtual IReadOnlyList<string> _getOperationCallArgs(
+            string executablePath,
+            string callArguments
+        ) => [];
+
+        protected virtual void _performPreInitializationSteps() { }
+
+        protected virtual void _performExtraLoadingSteps() { }
+
         public virtual void Initialize()
         {
-            // BEGIN integrity check
-            if (!_baseConstructorCalled) Throw($"The Manager {Properties.Name} has not called the base constructor.");
-            if (Capabilities.IsDummy) Throw($"The current instance of PackageManager with name ${Properties.Name} does not have a valid Capabilities object");
-            if (Properties.IsDummy) Throw($"The current instance of PackageManager with name ${Properties.Name} does not have a valid Properties object");
-
-            if (OperationHelper is NullPkgOperationHelper) Throw($"Manager {Name} does not have an OperationProvider");
-            if (DetailsHelper is NullPkgDetailsHelper) Throw($"Manager {Name} does not have a valid DetailsHelper");
-
-            if (Capabilities.SupportsCustomSources && SourcesHelper is NullSourceHelper)
-                Throw($"Manager {Name} has been declared as SupportsCustomSources but has no helper associated with it");
-            // END integrity check
-
-            Properties.DefaultSource.RefreshSourceNames();
-            foreach(var source in Properties.KnownSources)
-            {
-                source.RefreshSourceNames();
-            }
-
             try
             {
-                Status = LoadManager();
+                _ready = false;
+                _ensurePropertlyConstructed();
+                _performPreInitializationSteps();
 
-                if (IsReady() && Capabilities.SupportsCustomSources)
-                {
-                    Task<IReadOnlyList<IManagerSource>> sourcesTask = Task.Run(SourcesHelper.GetSources);
-
-                    if (sourcesTask.Wait(TimeSpan.FromSeconds(15)))
-                    {
-                        foreach (var source in sourcesTask.Result)
-                        {
-                            SourcesHelper?.Factory.AddSource(source);
-                        }
-                    }
-                    else
-                    {
-                        Logger.Warn(Name + " sources took too long to load, using known sources as default");
-                    }
+                if (!IsEnabled())
+                { // Do NOT initialise disabled package managers
+                    Status = new() { Version = CoreTools.Translate("{0} is disabled", DisplayName) };
+                    Logger.ImportantInfo($"{Name} is not enabled");
+                    return;
                 }
-                ManagerReady = true;
 
-                string LogData = "▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄" +
-                               "\n█▀▀▀▀▀▀▀▀▀▀▀▀▀ MANAGER LOADED ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀" +
-                               "\n█ Name: " + Name +
-                               "\n█ Enabled: " + IsEnabled().ToString() +
-                               (IsEnabled() ?
-                               "\n█ Found: " + Status.Found.ToString() +
-                               (Status.Found ?
-                               "\n█ Fancy exe name: " + Properties.ExecutableFriendlyName +
-                               "\n█ Executable path: " + Status.ExecutablePath +
-                               "\n█ Call arguments: " + Properties.ExecutableCallArgs +
-                               "\n█ Version: \n" + "█   " + Status.Version.Replace("\n", "\n█   ")
-                               :
-                               "\n█ THE MANAGER WAS NOT FOUND. PERHAPS IT IS NOT " +
-                               "\n█ INSTALLED OR IT HAS BEEN MISCONFIGURED "
-                               )
-                               :
-                               "\n█ THE MANAGER IS DISABLED"
-                               ) +
-                               "\n▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀";
+                // Find package manager executable
+                _loadManagerExecutableFile(
+                    out bool found,
+                    out string path,
+                    out string callArguments
+                );
+                Status = new ManagerStatus();
+                Status.Found = found;
+                Status.ExecutablePath = path;
+                Status.ExecutableCallArgs = callArguments;
 
-                Logger.Info(LogData);
+                if (!Status.Found)
+                { // Do not load version of managers that were not found
+                    Status.Version = CoreTools
+                        .Translate("{pm} was not found!")
+                        .Replace("{pm}", DisplayName)
+                        .Trim('!');
+                    Logger.Error($"{Name} is enabled but was not found on the system!");
+                    return;
+                }
+
+                Logger.ImportantInfo($"{Name} is enabled and was found on {path}");
+
+                Status.OperationCallArgs = _getOperationCallArgs(path, callArguments);
+
+                // Load manager version
+                _loadManagerVersion(out string version);
+                Status.Version = version;
+                _logManagerInfo();
+
+                // Finish initialization
+                _performExtraLoadingSteps();
+                _ready = true;
+                _initializeSources();
             }
-            catch (Exception e)
+            catch (Exception ex)
             {
-                ManagerReady = true; // We need this to unblock the main thread
-                Logger.Error("Could not initialize Package Manager " + Name);
-                Logger.Error(e);
+                Logger.Error($"An error occurred while initialising package manager {Name}");
+                Logger.Error(ex);
             }
         }
 
         /// <summary>
-        /// Returns a ManagerStatus object representing the current status of the package manager. This method runs asynchronously.
+        /// This serves to ensure that the implemented hasn't messed up any crucial
+        /// details on the implementation
         /// </summary>
-        protected abstract ManagerStatus LoadManager();
+        private void _ensurePropertlyConstructed()
+        {
+            if (!_baseConstructorCalled)
+                Throw($"The Manager {Properties.Name} has not called the base constructor.");
+            if (Capabilities.IsDummy)
+                Throw(
+                    $"The current instance of PackageManager with name ${Properties.Name} does not have a valid Capabilities object"
+                );
+            if (Properties.IsDummy)
+                Throw(
+                    $"The current instance of PackageManager with name ${Properties.Name} does not have a valid Properties object"
+                );
+
+            if (OperationHelper is NullPkgOperationHelper)
+                Throw($"Manager {Name} does not have an OperationProvider");
+            if (DetailsHelper is NullPkgDetailsHelper)
+                Throw($"Manager {Name} does not have a valid DetailsHelper");
+
+            if (Capabilities.SupportsCustomSources && SourcesHelper is NullSourceHelper)
+                Throw(
+                    $"Manager {Name} has been declared as SupportsCustomSources but has no helper associated with it"
+                );
+        }
+
+        /// <summary>
+        /// Load and prepare manager sources sources
+        /// </summary>
+        private void _initializeSources()
+        {
+            // Sources that are instantiated before Manager's DisplayName property will have invalid DisplayName
+            // To prevent loading it on runtime, the string is cached internally and will only be reloaded when needed to
+            Properties.DefaultSource.RefreshSourceNames();
+            foreach (var source in Properties.KnownSources)
+            {
+                source.RefreshSourceNames();
+            }
+
+            if (Capabilities.SupportsCustomSources)
+            {
+                // SourcesHelper.GetSources() will handle saving the found sources to the internal registry
+                SourcesHelper.GetSources();
+            }
+        }
+
+        private void _logManagerInfo()
+        {
+            string LogData = $"""
+                ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+                █▀▀▀▀▀▀▀▀▀▀▀▀▀ MANAGER LOADED ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                █ Name: {DisplayName} (aka {Name})
+                █ Executable name: "{Properties.ExecutableFriendlyName}"
+                █ Executable path: "{Status.ExecutablePath}"
+                █ Call arguments: "{Status.ExecutableCallArgs}"
+                █ Version: {Status.Version.Trim().Replace("\n", "\n█          ")}
+                █          
+                █ {DisplayName} is enabled and ready to go.
+                ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                """;
+            Logger.Info(LogData);
+        }
+
+        /// <summary>
+        /// Returns a list of paths that could be used for this package manager.
+        /// For example, if you have three Pythons installed on your system, this would return those three Pythons.
+        /// </summary>
+        /// <returns>A tuple containing: a boolean that represents whether the path was found or not; the path to the file if found.</returns>
+        public abstract IReadOnlyList<string> FindCandidateExecutableFiles();
+
+        public Tuple<bool, string> GetExecutableFile()
+        {
+            var candidates = FindCandidateExecutableFiles();
+
+            // If custom package manager paths are DISABLED, get the first one (as old UniGetUI did) and return it.
+            if (!SecureSettings.Get(SecureSettings.K.AllowCustomManagerPaths))
+            {
+                if (candidates.Count == 0)
+                {
+                    // No paths were found
+                    return new(false, "");
+                }
+
+                return new(true, candidates[0]);
+            }
+            else
+            {
+                string? exeSelection = Settings.GetDictionaryItem<string, string>(
+                    Settings.K.ManagerPaths,
+                    Name
+                );
+                // If there is no executable selection for this package manager
+                if (string.IsNullOrEmpty(exeSelection))
+                {
+                    if (candidates.Count == 0)
+                    {
+                        // No paths were found
+                        return new(false, "");
+                    }
+
+                    return new(true, candidates[0]);
+                }
+                else if (!File.Exists(exeSelection))
+                {
+                    Logger.Error(
+                        $"The selected executable path {exeSelection} for manager {Name} does not exist, the default one will be used if available..."
+                    );
+                }
+
+                else
+                {
+                    return new(true, exeSelection);
+                }
+
+                if (candidates.Count == 0)
+                {
+                    // No paths were found
+                    return new(false, "");
+                }
+
+                return new(true, candidates[0]);
+            }
+        }
 
         /// <summary>
         /// Returns true if the manager is enabled, false otherwise
         /// </summary>
         public bool IsEnabled()
         {
-            return !Settings.GetDictionaryItem<string, bool>("DisabledManagers", Name);
+            return !Settings.GetDictionaryItem<string, bool>(Settings.K.DisabledManagers, Name);
         }
 
         /// <summary>
@@ -134,47 +293,145 @@ namespace UniGetUI.PackageEngine.ManagerClasses.Manager
         /// </summary>
         public bool IsReady()
         {
-            return IsEnabled() && Status.Found;
+            return _ready && IsEnabled() && Status.Found;
+        }
+
+        // Opt out (override => false) when AttemptFastRepair can't recover a timed-out query (issue #4974).
+        protected virtual bool RetryListingTasksOnTimeout => true;
+
+        // Processes started by the current listing task, so a timeout can kill them instead of orphaning them.
+        private readonly AsyncLocal<List<Process>?> _listingProcesses = new();
+
+        // Lets a listing task register a process for kill-on-timeout. No-op when outside a listing task.
+        protected void RegisterListingProcess(Process process)
+        {
+            List<Process>? processes = _listingProcesses.Value;
+            if (processes is null)
+                return;
+            lock (processes)
+                processes.Add(process);
+        }
+
+        private static void KillListingProcesses(List<Process> processes)
+        {
+            lock (processes)
+                foreach (Process p in processes)
+                {
+                    try
+                    {
+                        if (!p.HasExited)
+                            p.Kill(entireProcessTree: true);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Warn($"Could not kill a timed-out process tree: {ex.Message}");
+                    }
+                }
+        }
+
+        private void RefreshPackageIndexesSafely()
+        {
+            try
+            {
+                RunListingTaskWithTimeout<object?>(
+                    () =>
+                    {
+                        RefreshPackageIndexes();
+                        return null;
+                    },
+                    "RefreshPackageIndexes",
+                    allowDisablingTimeout: false
+                );
+            }
+            catch (Exception e)
+            {
+                while (e is AggregateException)
+                    e = e.InnerException ?? new InvalidOperationException("How did we get here?");
+
+                Logger.Warn(
+                    $"Manager {DisplayName} could not refresh its package indexes "
+                        + $"({e.GetType().Name}: {e.Message}). The available updates will be listed "
+                        + "with the indexes as they are, which may result in an incomplete list."
+                );
+            }
+        }
+
+        private T RunListingTaskWithTimeout<T>(
+            Func<T> method,
+            string taskName,
+            bool allowDisablingTimeout = true
+        )
+        {
+            List<Process> processes = [];
+            var task = Task.Run(() =>
+            {
+                _listingProcesses.Value = processes;
+                return method();
+            });
+
+            if (!task.Wait(TimeSpan.FromSeconds(PackageListingTaskTimeout)))
+            {
+                if (
+                    !allowDisablingTimeout
+                    || !Settings.Get(Settings.K.DisableTimeoutOnPackageListingTasks)
+                )
+                {
+                    KillListingProcesses(processes);
+                    CoreTools.FinalizeDangerousTask(task);
+                    throw new TimeoutException(
+                        $"Task {taskName} for manager {Name} did not finish after "
+                            + $"{PackageListingTaskTimeout} seconds, aborting."
+                            + (
+                                allowDisablingTimeout
+                                    ? "  You may disable timeouts from UniGetUI Advanced Settings"
+                                    : ""
+                            )
+                    );
+                }
+
+                task.Wait();
+            }
+
+            return task.GetAwaiter().GetResult();
         }
 
         /// <summary>
         /// Returns an array of Package objects that the manager lists for the given query. Depending on the manager, the list may
         /// also include similar results. This method is fail-safe and will return an empty array if an error occurs.
         /// </summary>
-        public IReadOnlyList<IPackage> FindPackages(string query)
-            => _findPackages(query, false);
+        public IReadOnlyList<IPackage> FindPackages(string query) => _findPackages(query, false);
 
         private IReadOnlyList<IPackage> _findPackages(string query, bool SecondAttempt)
         {
-            if (!IsReady()) { Logger.Warn($"Manager {Name} is disabled but yet FindPackages was called"); return []; }
+            if (!IsReady())
+            {
+                Logger.Warn($"Manager {Name} is disabled but yet FindPackages was called");
+                return [];
+            }
             try
             {
-                var task = Task.Run(() => FindPackages_UnSafe(query));
-                if (!task.Wait(TimeSpan.FromSeconds(PackageListingTaskTimeout)))
-                {
-                    if (!Settings.Get("DisableTimeoutOnPackageListingTasks"))
-                        throw new TimeoutException($"Task _getInstalledPackages for manager {Name} did not finish after " +
-                                                   $"{PackageListingTaskTimeout} seconds, aborting.  You may disable " +
-                                                   $"timeouts from UniGetUI Advanced Settings");
-                    task.Wait();
-                }
-
-                Package[] packages = task.GetAwaiter().GetResult().ToArray();
-
-                for (int i = 0; i < packages.Length; i++)
-                {
-                    packages[i] = PackageCacher.GetAvailablePackage(packages[i]);
-                }
-                Logger.Info($"Found {packages.Length} available packages from {Name} with the query {query}");
+                var packages = RunListingTaskWithTimeout(
+                    () => FindPackages_UnSafe(query),
+                    "_findPackages"
+                );
+                Logger.Info(
+                    $"Found {packages.Count} available packages from {Name} with the query {query}"
+                );
                 return packages;
             }
             catch (Exception e)
             {
-                if (!SecondAttempt)
+                while (e is AggregateException)
+                    e = e.InnerException ?? new InvalidOperationException("How did we get here?");
+
+                if (!SecondAttempt && (RetryListingTasksOnTimeout || e is not TimeoutException))
                 {
-                    while (e is AggregateException) e = e.InnerException ?? new InvalidOperationException("How did we get here?");
-                    Logger.Warn($"Manager {DisplayName} failed to find packages with exception {e.GetType().Name}: {e.Message}");
-                    Logger.Warn($"Since this was the first attempt, {Name}.AttemptFastRepair() will be called and the procedure will be restarted");
+                    Logger.Warn(
+                        $"Manager {DisplayName} failed to find packages with exception {e.GetType().Name}: {e.Message}"
+                    );
+                    Logger.Warn(
+                        $"Since this was the first attempt, {Name}.AttemptFastRepair() will be called and the procedure will be restarted"
+                    );
                     AttemptFastRepair();
                     return _findPackages(query, true);
                 }
@@ -189,49 +446,52 @@ namespace UniGetUI.PackageEngine.ManagerClasses.Manager
         /// Returns an array of UpgradablePackage objects that represent the available updates reported by the manager.
         /// This method is fail-safe and will return an empty array if an error occurs.
         /// </summary>
+        public bool LastUpdatesListingFailed { get; private set; }
+
         public IReadOnlyList<IPackage> GetAvailableUpdates()
-            => _getAvailableUpdates(false);
+        {
+            LastUpdatesListingFailed = false;
+            return _getAvailableUpdates(false);
+        }
 
         private IReadOnlyList<IPackage> _getAvailableUpdates(bool SecondAttempt)
         {
-            if (!IsReady()) { Logger.Warn($"Manager {Name} is disabled but yet GetAvailableUpdates was called"); return []; }
+            if (!IsReady())
+            {
+                Logger.Warn($"Manager {Name} is disabled but yet GetAvailableUpdates was called");
+                return [];
+            }
             try
             {
-                Task.Run(RefreshPackageIndexes).Wait(TimeSpan.FromSeconds(60));
+                RefreshPackageIndexesSafely();
 
-                var task = Task.Run(GetAvailableUpdates_UnSafe);
-                if (!task.Wait(TimeSpan.FromSeconds(PackageListingTaskTimeout)))
-                {
-                    if (!Settings.Get("DisableTimeoutOnPackageListingTasks"))
-                        throw new TimeoutException($"Task _getInstalledPackages for manager {Name} did not finish after " +
-                                                   $"{PackageListingTaskTimeout} seconds, aborting.  You may disable " +
-                                                   $"timeouts from UniGetUI Advanced Settings");
-                    task.Wait();
-                }
-
-                Package[] packages = task.GetAwaiter().GetResult().ToArray();
-
-                for (int i = 0; i < packages.Length; i++)
-                {
-                    packages[i] = PackageCacher.GetUpgradablePackage(packages[i]);
-                }
-
-                Logger.Info($"Found {packages.Length} available updates from {Name}");
+                var packages = RunListingTaskWithTimeout(
+                    GetAvailableUpdates_UnSafe,
+                    "_getAvailableUpdates"
+                );
+                Logger.Info($"Found {packages.Count} available updates from {Name}");
                 return packages;
             }
             catch (Exception e)
             {
-                if (!SecondAttempt)
+                while (e is AggregateException)
+                    e = e.InnerException ?? new InvalidOperationException("How did we get here?");
+
+                if (!SecondAttempt && (RetryListingTasksOnTimeout || e is not TimeoutException))
                 {
-                    while (e is AggregateException) e = e.InnerException ?? new InvalidOperationException("How did we get here?");
-                    Logger.Warn($"Manager {DisplayName} failed to list available updates with exception {e.GetType().Name}: {e.Message}");
-                    Logger.Warn($"Since this was the first attempt, {Name}.AttemptFastRepair() will be called and the procedure will be restarted");
+                    Logger.Warn(
+                        $"Manager {DisplayName} failed to list available updates with exception {e.GetType().Name}: {e.Message}"
+                    );
+                    Logger.Warn(
+                        $"Since this was the first attempt, {Name}.AttemptFastRepair() will be called and the procedure will be restarted"
+                    );
                     AttemptFastRepair();
                     return _getAvailableUpdates(true);
                 }
 
                 Logger.Error("Error finding updates on manager " + Name);
                 Logger.Error(e);
+                LastUpdatesListingFailed = true;
                 return [];
             }
         }
@@ -240,47 +500,50 @@ namespace UniGetUI.PackageEngine.ManagerClasses.Manager
         /// Returns an array of Package objects that represent the installed reported by the manager.
         /// This method is fail-safe and will return an empty array if an error occurs.
         /// </summary>
+        public bool LastInstalledListingFailed { get; private set; }
+
         public IReadOnlyList<IPackage> GetInstalledPackages()
-            => _getInstalledPackages(false);
+        {
+            LastInstalledListingFailed = false;
+            return _getInstalledPackages(false);
+        }
 
         private IReadOnlyList<IPackage> _getInstalledPackages(bool SecondAttempt)
         {
-            if (!IsReady()) { Logger.Warn($"Manager {Name} is disabled but yet GetInstalledPackages was called"); return []; }
+            if (!IsReady())
+            {
+                Logger.Warn($"Manager {Name} is disabled but yet GetInstalledPackages was called");
+                return [];
+            }
             try
             {
-                var task = Task.Run(GetInstalledPackages_UnSafe);
-                if (!task.Wait(TimeSpan.FromSeconds(PackageListingTaskTimeout)))
-                {
-                    if (!Settings.Get("DisableTimeoutOnPackageListingTasks"))
-                        throw new TimeoutException($"Task _getInstalledPackages for manager {Name} did not finish after " +
-                                                   $"{PackageListingTaskTimeout} seconds, aborting.  You may disable " +
-                                                   $"timeouts from UniGetUI Advanced Settings");
-                    task.Wait();
-                }
-
-                Package[] packages = task.GetAwaiter().GetResult().ToArray();
-
-                for (int i = 0; i < packages.Length; i++)
-                {
-                    packages[i] = PackageCacher.GetInstalledPackage(packages[i]);
-                }
-
-                Logger.Info($"Found {packages.Length} installed packages from {Name}");
+                var packages = RunListingTaskWithTimeout(
+                    GetInstalledPackages_UnSafe,
+                    "_getInstalledPackages"
+                );
+                Logger.Info($"Found {packages.Count} installed packages from {Name}");
                 return packages;
             }
             catch (Exception e)
             {
-                if (!SecondAttempt)
+                while (e is AggregateException)
+                    e = e.InnerException ?? new InvalidOperationException("How did we get here?");
+
+                if (!SecondAttempt && (RetryListingTasksOnTimeout || e is not TimeoutException))
                 {
-                    while (e is AggregateException) e = e.InnerException ?? new InvalidOperationException("How did we get here?");
-                    Logger.Warn($"Manager {DisplayName} failed to list installed packages with exception {e.GetType().Name}: {e.Message}");
-                    Logger.Warn($"Since this was the first attempt, {Name}.AttemptFastRepair() will be called and the procedure will be restarted");
+                    Logger.Warn(
+                        $"Manager {DisplayName} failed to list installed packages with exception {e.GetType().Name}: {e.Message}"
+                    );
+                    Logger.Warn(
+                        $"Since this was the first attempt, {Name}.AttemptFastRepair() will be called and the procedure will be restarted"
+                    );
                     AttemptFastRepair();
                     return _getInstalledPackages(true);
                 }
 
                 Logger.Error("Error finding installed packages on manager " + Name);
                 Logger.Error(e);
+                LastInstalledListingFailed = true;
                 return [];
             }
         }
@@ -311,15 +574,17 @@ namespace UniGetUI.PackageEngine.ManagerClasses.Manager
         /// Refreshes the Package Manager sources/indexes
         /// Each manager MUST implement this method.
         /// </summary>
-        public virtual async void RefreshPackageIndexes()
+        public virtual void RefreshPackageIndexes()
         {
             Logger.Debug($"Manager {Name} has not implemented RefreshPackageIndexes");
-            await Task.CompletedTask;
         }
 
+        /// <summary>
+        /// Attempt a live, fast, repair method when an exception occurs (for example, reconnect to COM Server)
+        /// </summary>
         public virtual void AttemptFastRepair()
         {
-            // Implementing this method is optional
+            Logger.Debug($"Manager {Name} has not implemented AttemptFastRepair");
         }
     }
 }

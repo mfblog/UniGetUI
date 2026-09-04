@@ -3,12 +3,22 @@ namespace UniGetUI.PackageEngine.Enums
     /// <summary>
     /// Represents the installation scope of a package
     /// </summary>
-    public enum PackageScope
+    public static class PackageScope
     {
-        Global = 1,
-        Machine = 1,
-        Local = 0,
-        User = 0,
+        public static HashSet<string> ValidValues = [Machine, User];
+        public const string Machine = "machine";
+        public const string Global = Machine;
+        public const string User = "user";
+        public const string Local = User;
+    }
+
+    public static class Architecture
+    {
+        public static HashSet<string> ValidValues = [x86, x64, arm32, arm64];
+        public const string x86 = "x86";
+        public const string x64 = "x64";
+        public const string arm32 = "arm32";
+        public const string arm64 = "arm64";
     }
 
     public enum DeserializedPackageStatus
@@ -17,7 +27,7 @@ namespace UniGetUI.PackageEngine.Enums
         ManagerNotEnabled,
         ManagerNotReady,
         SourceNotFound,
-        IsAvailable
+        IsAvailable,
     }
 
     public enum BundleFormatType
@@ -33,6 +43,7 @@ namespace UniGetUI.PackageEngine.Enums
         Success,
         Failure,
         Canceled,
+
         // RestartRequired,
         AutoRetry,
     }
@@ -43,7 +54,7 @@ namespace UniGetUI.PackageEngine.Enums
         Running,
         Succeeded,
         Failed,
-        Canceled
+        Canceled,
     }
 
     public enum OperationType
@@ -51,7 +62,7 @@ namespace UniGetUI.PackageEngine.Enums
         Install,
         Update,
         Uninstall,
-        None
+        None,
     }
 
     public enum LoggableTaskType
@@ -60,37 +71,45 @@ namespace UniGetUI.PackageEngine.Enums
         /// Installs a required dependency for a Package Manager
         /// </summary>
         InstallManagerDependency,
+
         /// <summary>
         /// Searches for packages with a specific query
         /// </summary>
         FindPackages,
+
         /// <summary>
         /// Lists all the available updates
         /// </summary>
         ListUpdates,
+
         /// <summary>
         /// Lists the installed packages
         /// </summary>
         ListInstalledPackages,
+
         /// <summary>
         /// Refreshes the package indexes
         /// </summary>
         RefreshIndexes,
+
         /// <summary>
         /// Lists the available sources for the manager
         /// </summary>
         ListSources,
+
         /// <summary>
         /// Loads the package details for a specific package
         /// </summary>
         LoadPackageDetails,
+
         /// <summary>
         /// Loads the available versions for a specific package
         /// </summary>
         LoadPackageVersions,
+
         /// <summary>
         /// Other, specific task
         /// </summary>
-        OtherTask
+        OtherTask,
     }
 }

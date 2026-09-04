@@ -24,14 +24,19 @@ namespace UniGetUI.Core.SettingsEngine
                 }
                 catch (InvalidCastException)
                 {
-                    Logger.Error($"Tried to get a list setting as type {typeof(T)}, which is not the type of the list");
+                    Logger.Error(
+                        $"Tried to get a list setting as type {typeof(T)}, which is not the type of the list"
+                    );
                     return null;
                 }
 
                 // Otherwise, load the setting from disk and cache that setting
                 List<T> value = [];
 
-                var file = Path.Join(CoreData.UniGetUIUserConfigurationDirectory, $"{setting}.json");
+                var file = Path.Join(
+                    CoreData.UniGetUIUserConfigurationDirectory,
+                    $"{setting}.json"
+                );
                 if (File.Exists(file))
                 {
                     string result = File.ReadAllText(file);
@@ -39,7 +44,7 @@ namespace UniGetUI.Core.SettingsEngine
                     {
                         if (result != "")
                         {
-                            List<T>? item = JsonSerializer.Deserialize<List<T>>(result, SerializationOptions);
+                            List<T>? item = SettingsJson.DeserializeList<T>(result);
                             if (item is not null)
                             {
                                 value = item;
@@ -49,12 +54,17 @@ namespace UniGetUI.Core.SettingsEngine
                     catch (InvalidCastException)
                     {
                         Logger.Error(
-                            $"Tried to get a list setting as type {typeof(T)}, but the setting on disk {result} cannot be deserialized to {typeof(T)}");
+                            $"Tried to get a list setting as type {typeof(T)}, but the setting on disk {result} cannot be deserialized to {typeof(T)}"
+                        );
                     }
                 }
 
                 listSettings[setting] = value.Cast<object>().ToList();
                 return value;
+            }
+            catch (InvalidOperationException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -72,16 +82,25 @@ namespace UniGetUI.Core.SettingsEngine
 
         public static void SetList<T>(string setting, List<T> value)
         {
-            listSettings[setting] = value.Cast<object>().ToList();
             var file = Path.Join(CoreData.UniGetUIUserConfigurationDirectory, $"{setting}.json");
             try
             {
-                if (value.Count != 0) File.WriteAllText(file, JsonSerializer.Serialize(value, SerializationOptions));
-                else if (File.Exists(file)) File.Delete(file);
+                if (value.Count != 0)
+                    File.WriteAllText(file, SettingsJson.SerializeList(value));
+                else if (File.Exists(file))
+                    File.Delete(file);
+
+                listSettings[setting] = value.Cast<object>().ToList();
+            }
+            catch (InvalidOperationException)
+            {
+                throw;
             }
             catch (Exception e)
             {
-                Logger.Error($"CANNOT SET SETTING LIST FOR setting={setting} [{string.Join(", ", value)}]");
+                Logger.Error(
+                    $"CANNOT SET SETTING LIST FOR setting={setting} [{string.Join(", ", value)}]"
+                );
                 Logger.Error(e);
             }
         }
@@ -89,7 +108,8 @@ namespace UniGetUI.Core.SettingsEngine
         public static T? GetListItem<T>(string setting, int index)
         {
             List<T>? list = _getList<T>(setting);
-            if (list == null) return default;
+            if (list == null)
+                return default;
             if (list.Count <= index)
             {
                 Logger.Error($"Index {index} out of range for list setting {setting}");
@@ -102,7 +122,8 @@ namespace UniGetUI.Core.SettingsEngine
         public static void AddToList<T>(string setting, T value)
         {
             List<T>? list = _getList<T>(setting);
-            if (list == null) return;
+            if (list == null)
+                return;
 
             list.Add(value);
             SetList(setting, list);
@@ -111,7 +132,8 @@ namespace UniGetUI.Core.SettingsEngine
         public static bool RemoveFromList<T>(string setting, T value)
         {
             List<T>? list = _getList<T>(setting);
-            if (list == null) return false;
+            if (list == null)
+                return false;
 
             bool result = list.Remove(value);
             SetList(setting, list);
@@ -121,7 +143,8 @@ namespace UniGetUI.Core.SettingsEngine
         public static bool ListContains<T>(string setting, T value)
         {
             List<T>? list = _getList<T>(setting);
-            if (list == null) return false;
+            if (list == null)
+                return false;
             return list.Contains(value);
         }
 

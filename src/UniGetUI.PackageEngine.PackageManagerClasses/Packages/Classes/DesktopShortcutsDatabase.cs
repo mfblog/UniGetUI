@@ -12,16 +12,17 @@ public static class DesktopShortcutsDatabase
         Delete, // The user has allowed the shortcut to be deleted
     }
 
-    private static readonly List<string> UnknownShortcuts = [];
+    private const string PendingShortcutsKey = "PendingDesktopShortcuts";
 
     public static IReadOnlyDictionary<string, bool> GetDatabase()
     {
-        return Settings.GetDictionary<string, bool>("DeletableDesktopShortcuts") ?? new Dictionary<string, bool>();
+        return Settings.GetDictionary<string, bool>(Settings.K.DeletableDesktopShortcuts)
+            ?? new Dictionary<string, bool>();
     }
 
     public static void ResetDatabase()
     {
-        Settings.ClearDictionary("DeletableDesktopShortcuts");
+        Settings.ClearDictionary(Settings.K.DeletableDesktopShortcuts);
     }
 
     /// <summary>
@@ -32,9 +33,16 @@ public static class DesktopShortcutsDatabase
     public static void AddToDatabase(string shortcutPath, Status shortcutStatus)
     {
         if (shortcutStatus is Status.Unknown)
-            Settings.RemoveDictionaryKey<string, bool>("DeletableDesktopShortcuts", shortcutPath);
+            Settings.RemoveDictionaryKey<string, bool>(
+                Settings.K.DeletableDesktopShortcuts,
+                shortcutPath
+            );
         else
-            Settings.SetDictionaryItem<string, bool>("DeletableDesktopShortcuts", shortcutPath, shortcutStatus is Status.Delete);
+            Settings.SetDictionaryItem<string, bool>(
+                Settings.K.DeletableDesktopShortcuts,
+                shortcutPath,
+                shortcutStatus is Status.Delete
+            );
     }
 
     /// <summary>
@@ -45,15 +53,22 @@ public static class DesktopShortcutsDatabase
     public static bool Remove(string shortcutPath)
     {
         // Remove the entry if present
-        if (Settings.DictionaryContainsKey<string, bool>("DeletableDesktopShortcuts", shortcutPath))
+        if (
+            Settings.DictionaryContainsKey<string, bool>(
+                Settings.K.DeletableDesktopShortcuts,
+                shortcutPath
+            )
+        )
         {
             // Remove the entry and propagate changes to disk
-            Settings.SetDictionaryItem("DeletableDesktopShortcuts", shortcutPath, false);
+            Settings.SetDictionaryItem(Settings.K.DeletableDesktopShortcuts, shortcutPath, false);
             return true;
         }
 
         // Do nothing if the entry was not there
-        Logger.Warn($"Attempted to remove from deletable desktop shortcuts a shortcut {{shortcutPath={shortcutPath}}} that was not found there");
+        Logger.Warn(
+            $"Attempted to remove from deletable desktop shortcuts a shortcut {{shortcutPath={shortcutPath}}} that was not found there"
+        );
         return false;
     }
 
@@ -88,9 +103,17 @@ public static class DesktopShortcutsDatabase
     public static Status GetStatus(string shortcutPath)
     {
         // Check if the package is ignored
-        if (Settings.DictionaryContainsKey<string, bool>("DeletableDesktopShortcuts", shortcutPath))
+        if (
+            Settings.DictionaryContainsKey<string, bool>(
+                Settings.K.DeletableDesktopShortcuts,
+                shortcutPath
+            )
+        )
         {
-            bool canDelete = Settings.GetDictionaryItem<string, bool>("DeletableDesktopShortcuts", shortcutPath);
+            bool canDelete = Settings.GetDictionaryItem<string, bool>(
+                Settings.K.DeletableDesktopShortcuts,
+                shortcutPath
+            );
             return canDelete ? Status.Delete : Status.Maintain;
         }
 
@@ -103,12 +126,27 @@ public static class DesktopShortcutsDatabase
     /// <returns>A list of desktop shortcut paths</returns>
     public static List<string> GetShortcutsOnDisk()
     {
-        List<string> shortcuts = [];
-        string UserDesktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-        string CommonDesktop = Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
-        shortcuts.AddRange(Directory.EnumerateFiles(UserDesktop, "*.lnk"));
-        shortcuts.AddRange(Directory.EnumerateFiles(CommonDesktop, "*.lnk"));
-        return shortcuts;
+        try
+        {
+            List<string> shortcuts = [];
+            string UserDesktop = Environment.GetFolderPath(
+                Environment.SpecialFolder.DesktopDirectory
+            );
+            string CommonDesktop = Environment.GetFolderPath(
+                Environment.SpecialFolder.CommonDesktopDirectory
+            );
+            if (UserDesktop != "")
+                shortcuts.AddRange(Directory.EnumerateFiles(UserDesktop, "*.lnk"));
+            if (CommonDesktop != "")
+                shortcuts.AddRange(Directory.EnumerateFiles(CommonDesktop, "*.lnk"));
+            return shortcuts;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("Failed to load desktop shortcuts on disk");
+            Logger.Error(ex);
+            return [];
+        }
     }
 
     /// <summary>
@@ -119,7 +157,7 @@ public static class DesktopShortcutsDatabase
     {
         var shortcuts = GetShortcutsOnDisk();
 
-        foreach (var item in Settings.GetDictionary<string, bool>("DeletableDesktopShortcuts"))
+        foreach (var item in GetDatabase())
         {
             if (!shortcuts.Contains(item.Key))
                 shortcuts.Add(item.Key);
@@ -135,7 +173,15 @@ public static class DesktopShortcutsDatabase
     /// <returns>True if it was found, false otherwise</returns>
     public static bool RemoveFromUnknownShortcuts(string shortcutPath)
     {
-        return UnknownShortcuts.Remove(shortcutPath);
+        return Settings.RemoveFromList(PendingShortcutsKey, shortcutPath);
+    }
+
+    /// <summary>
+    /// Clears every shortcut awaiting a deletion verdict.
+    /// </summary>
+    public static void ClearUnknownShortcuts()
+    {
+        Settings.ClearList(PendingShortcutsKey);
     }
 
     /// <summary>
@@ -144,7 +190,9 @@ public static class DesktopShortcutsDatabase
     /// <returns>The list of shortcuts awaiting verdicts</returns>
     public static List<string> GetUnknownShortcuts()
     {
-        return UnknownShortcuts;
+        return (Settings.GetList<string>(PendingShortcutsKey) ?? [])
+            .Where(File.Exists)
+            .ToList();
     }
 
     /// <summary>
@@ -153,7 +201,7 @@ public static class DesktopShortcutsDatabase
     /// <param name="PreviousShortCutList">The shortcuts that already existed</param>
     public static void HandleNewShortcuts(IReadOnlyList<string> PreviousShortCutList)
     {
-        bool DeleteUnknownShortcuts = Settings.Get("RemoveAllDesktopShortcuts");
+        bool DeleteUnknownShortcuts = Settings.Get(Settings.K.RemoveAllDesktopShortcuts);
         HashSet<string> PreviousShortcuts = [.. PreviousShortCutList];
         List<string> CurrentShortcuts = GetShortcutsOnDisk();
 
@@ -174,24 +222,26 @@ public static class DesktopShortcutsDatabase
             {
                 // If a shortcut has not been detected yet, and it
                 // existed before an operation started, then do nothing.
-                if(PreviousShortcuts.Contains(shortcut))
+                if (PreviousShortcuts.Contains(shortcut))
                     continue;
 
                 if (DeleteUnknownShortcuts)
                 {
                     // If the shortcut was created during an operation
                     // and autodelete is enabled, delete that icon
-                    Logger.Warn($"New shortcut {shortcut} will be set for deletion (this shortcut was never seen before)");
+                    Logger.Warn(
+                        $"New shortcut {shortcut} will be set for deletion (this shortcut was never seen before)"
+                    );
                     AddToDatabase(shortcut, Status.Delete);
                     DeleteFromDisk(shortcut);
                 }
                 else
                 {
                     // Mark the shortcut as unknown and prompt the user.
-                    if (!UnknownShortcuts.Contains(shortcut))
+                    if (!Settings.ListContains(PendingShortcutsKey, shortcut))
                     {
                         Logger.Info($"Marking the shortcut {shortcut} to be asked to be deleted");
-                        UnknownShortcuts.Add(shortcut);
+                        Settings.AddToList(PendingShortcutsKey, shortcut);
                     }
                 }
             }

@@ -3,22 +3,33 @@ using UniGetUI.Core.Data;
 
 namespace UniGetUI.Core.SettingsEngine.Tests
 {
-
     public sealed class SerializableTestSub
     {
-        public SerializableTestSub(string s, int c) { sub = s; count = c; }
+        public SerializableTestSub(string s, int c)
+        {
+            sub = s;
+            count = c;
+        }
+
         public string sub { get; set; }
         public int count { get; set; }
     }
+
     public sealed class SerializableTest
     {
-        public SerializableTest(string t, int c, SerializableTestSub s) { title = t; count = c; sub = s; }
+        public SerializableTest(string t, int c, SerializableTestSub s)
+        {
+            title = t;
+            count = c;
+            sub = s;
+        }
+
         public string title { get; set; }
         public int count { get; set; }
         public SerializableTestSub sub { get; set; }
     }
 
-    public class SettingsTest
+    public class SettingsTest : IDisposable
     {
         private readonly string _testRoot;
 
@@ -47,15 +58,17 @@ namespace UniGetUI.Core.SettingsEngine.Tests
             Directory.Delete(_testRoot, true);
         }
 
-        private string GetNewSettingPath(string fileName) => Path.Combine(_newConfigurationDirectory, fileName);
-        private string GetOldSettingsPath(string fileName) => Path.Combine(_oldConfigurationDirectory, fileName);
+        private string GetNewSettingPath(string fileName) =>
+            Path.Combine(_newConfigurationDirectory, fileName);
 
+        private string GetOldSettingsPath(string fileName) =>
+            Path.Combine(_oldConfigurationDirectory, fileName);
 
         [Fact]
         public void TestSettingsSaveToNewDirectory()
         {
-            Settings.Set("FreshBoolSetting", true);
-            Settings.SetValue("FreshValue", "test");
+            Settings.Set(Settings.K.FreshBoolSetting, true);
+            Settings.SetValue(Settings.K.FreshValue, "test");
 
             Assert.True(File.Exists(GetNewSettingPath("FreshBoolSetting")));
             Assert.True(File.Exists(GetNewSettingPath("FreshValue")));
@@ -64,13 +77,13 @@ namespace UniGetUI.Core.SettingsEngine.Tests
         [Fact]
         public void TestExistingSettingsMigrateToNewDirectory()
         {
-            string settingName = "LegacyBoolSetting";
+            string settingName = Settings.ResolveKey(Settings.K.Test7_Legacy);
             var oldPath = GetOldSettingsPath(settingName);
             File.WriteAllText(oldPath, "");
 
-            var migratedValue = Settings.Get(settingName);
+            var migratedValue = Settings.Get(Settings.K.Test7_Legacy);
             var newPath = GetNewSettingPath(settingName);
-            var valueAfterMigration = Settings.Get(settingName);
+            var valueAfterMigration = Settings.Get(Settings.K.Test7_Legacy);
 
             Assert.True(migratedValue);
             Assert.True(valueAfterMigration);
@@ -80,72 +93,150 @@ namespace UniGetUI.Core.SettingsEngine.Tests
         }
 
         [Theory]
-        [InlineData("TestSetting1", true, false, false, true)]
-        [InlineData("TestSetting2", true, false, false, false)]
-        [InlineData("Test.Settings_with", true, false, true, true)]
-        [InlineData("TestSettingEntry With A  Space", false, true, false, false)]
-        [InlineData("ª", false, false, false, false)]
-        [InlineData("VeryVeryLongTestSettingEntrySoTheClassCanReallyBeStressedOut", true, false, true, true)]
-        public void TestBooleanSettings(string SettingName, bool st1, bool st2, bool st3, bool st4)
+        [InlineData(Settings.K.Test1, true, false, false, true)]
+        [InlineData(Settings.K.Test2, true, false, false, false)]
+        [InlineData(Settings.K.Test3, true, false, true, true)]
+        [InlineData(Settings.K.Test4, false, true, false, false)]
+        [InlineData(Settings.K.Test5, false, false, false, false)]
+        [InlineData(Settings.K.Test6, true, false, true, true)]
+        public void TestBooleanSettings(Settings.K key, bool st1, bool st2, bool st3, bool st4)
         {
-            Settings.Set(SettingName, st1);
-            Assert.Equal(st1, Settings.Get(SettingName));
-            Assert.Equal(st1, File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, SettingName)));
+            string sName = Settings.ResolveKey(key);
+            Settings.Set(key, st1);
+            Assert.Equal(st1, Settings.Get(key));
+            Assert.Equal(
+                st1,
+                File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, sName))
+            );
 
-            Settings.Set(SettingName, st2);
-            Assert.Equal(st2, Settings.Get(SettingName));
-            Assert.Equal(st2, File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, SettingName)));
+            Settings.Set(key, st2);
+            Assert.Equal(st2, Settings.Get(key));
+            Assert.Equal(
+                st2,
+                File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, sName))
+            );
 
-            Settings.Set(SettingName, st3);
-            Assert.Equal(st3, Settings.Get(SettingName));
-            Assert.Equal(st3, File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, SettingName)));
+            Settings.Set(key, st3);
+            Assert.Equal(st3, Settings.Get(key));
+            Assert.Equal(
+                st3,
+                File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, sName))
+            );
 
-            Settings.Set(SettingName, st4);
-            Assert.Equal(st4, Settings.Get(SettingName));
-            Assert.Equal(st4, File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, SettingName)));
+            Settings.Set(key, st4);
+            Assert.Equal(st4, Settings.Get(key));
+            Assert.Equal(
+                st4,
+                File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, sName))
+            );
 
-            Settings.Set(SettingName, false); // Cleanup
-            Assert.False(Settings.Get(SettingName));
-            Assert.False(File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, SettingName)));
+            Settings.Set(key, false); // Cleanup
+            Assert.False(Settings.Get(key));
+            Assert.False(
+                File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, sName))
+            );
         }
 
         [Theory]
-        [InlineData("TestSetting1", "RandomFirstValue", "RandomSecondValue", "", "RandomThirdValue")]
-        [InlineData("ktjgshdfsd", "", "", "", "RandomThirdValue")]
-        [InlineData("ª", "RandomFirstValue", "    ", "\t", "RandomThirdValue")]
-        [InlineData("TestSettingEntry With A  Space", "RandomFirstValue", "", "", "")]
-        [InlineData("VeryVeryLongTestSettingEntrySoTheClassCanReallyBeStressedOut", "\x00\x01\x02\u0003", "", "", "RandomThirdValue")]
-        public void TestValueSettings(string SettingName, string st1, string st2, string st3, string st4)
+        [InlineData(
+            Settings.K.Test1,
+            "RandomFirstValue",
+            "RandomSecondValue",
+            "",
+            "RandomThirdValue"
+        )]
+        [InlineData(Settings.K.Test2, "", "", "", "RandomThirdValue")]
+        [InlineData(Settings.K.Test3, "RandomFirstValue", "    ", "\t", "RandomThirdValue")]
+        [InlineData(Settings.K.Test4, "RandomFirstValue", "", "", "")]
+        [InlineData(Settings.K.Test5, "\x00\x01\x02\u0003", "", "", "RandomThirdValue")]
+        public void TestValueSettings(
+            Settings.K key,
+            string st1,
+            string st2,
+            string st3,
+            string st4
+        )
         {
-            Settings.SetValue(SettingName, st1);
-            Assert.Equal(st1, Settings.GetValue(SettingName));
-            Assert.Equal(st1 != "", File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, SettingName)));
+            string sName = Settings.ResolveKey(key);
+            Settings.SetValue(key, st1);
+            Assert.Equal(st1, Settings.GetValue(key));
+            Assert.Equal(
+                st1 != "",
+                File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, sName))
+            );
 
-            Settings.SetValue(SettingName, st2);
-            Assert.Equal(st2, Settings.GetValue(SettingName));
-            Assert.Equal(st2 != "", File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, SettingName)));
+            Settings.SetValue(key, st2);
+            Assert.Equal(st2, Settings.GetValue(key));
+            Assert.Equal(
+                st2 != "",
+                File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, sName))
+            );
 
-            Settings.SetValue(SettingName, st3);
-            Assert.Equal(st3, Settings.GetValue(SettingName));
-            Assert.Equal(st3 != "", File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, SettingName)));
+            Settings.SetValue(key, st3);
+            Assert.Equal(st3, Settings.GetValue(key));
+            Assert.Equal(
+                st3 != "",
+                File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, sName))
+            );
 
-            Settings.SetValue(SettingName, st4);
-            Assert.Equal(st4, Settings.GetValue(SettingName));
-            Assert.Equal(st4 != "", File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, SettingName)));
+            Settings.SetValue(key, st4);
+            Assert.Equal(st4, Settings.GetValue(key));
+            Assert.Equal(
+                st4 != "",
+                File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, sName))
+            );
 
-            Settings.Set(SettingName, false); // Cleanup
-            Assert.False(Settings.Get(SettingName));
-            Assert.Equal("", Settings.GetValue(SettingName));
-            Assert.False(File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, SettingName)));
+            Settings.Set(key, false); // Cleanup
+            Assert.False(Settings.Get(key));
+            Assert.Equal("", Settings.GetValue(key));
+            Assert.False(
+                File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, sName))
+            );
         }
 
         [Theory]
-        [InlineData("lsTestSetting1", new string[] { "UpdatedFirstValue", "RandomString1", "RandomTestValue", "AnotherRandomValue" }, new int[] { 9, 15, 21, 1001, 4567 }, new string[] { "itemA", "itemB", "itemC" })]
-        [InlineData("lsktjgshdfsd", new string[] { "newValue1", "updatedString", "emptyString", "randomSymbols@123" }, new int[] { 42, 23, 17, 98765, 3482 }, new string[] { "itemX", "itemY", "itemZ" })]
-        [InlineData("lsª", new string[] { "UniqueVal1", "NewVal2", "AnotherVal3", "TestVal4" }, new int[] { 123, 456, 789, 321, 654 }, new string[] { "item1", "item2", "item3" })]
-        [InlineData("lsTestSettingEntry With A  Space", new string[] { "ChangedFirstValue", "AlteredSecondVal", "TestedValue", "FinalVal" }, new int[] { 23, 98, 456, 753, 951 }, new string[] { "testA", "testB", "testC" })]
-        [InlineData("lsVeryVeryLongTestSettingEntrySoTheClassCanReallyBeStressedOut", new string[] { "newCharacterSet\x99\x01\x02", "UpdatedRandomValue", "TestEmptyString", "FinalTestValue" }, new int[] { 0b11001100, 1234, 5678, 1000000 }, new string[] { "finalTest1", "finalTest2", "finalTest3" })]
-        public void TestListSettings(string SettingName, string[] ls1Array, int[] ls2Array, string[] ls3Array)
+        [InlineData(
+            "lsTestSetting1",
+            new[] { "UpdatedFirstValue", "RandomString1", "RandomTestValue", "AnotherRandomValue" },
+            new[] { 9, 15, 21, 1001, 4567 },
+            new[] { "itemA", "itemB", "itemC" }
+        )]
+        [InlineData(
+            "lsktjgshdfsd",
+            new[] { "newValue1", "updatedString", "emptyString", "randomSymbols@123" },
+            new[] { 42, 23, 17, 98765, 3482 },
+            new[] { "itemX", "itemY", "itemZ" }
+        )]
+        [InlineData(
+            "lsª",
+            new[] { "UniqueVal1", "NewVal2", "AnotherVal3", "TestVal4" },
+            new[] { 123, 456, 789, 321, 654 },
+            new[] { "item1", "item2", "item3" }
+        )]
+        [InlineData(
+            "lsTestSettingEntry With A  Space",
+            new[] { "ChangedFirstValue", "AlteredSecondVal", "TestedValue", "FinalVal" },
+            new[] { 23, 98, 456, 753, 951 },
+            new[] { "testA", "testB", "testC" }
+        )]
+        [InlineData(
+            "lsVeryVeryLongTestSettingEntrySoTheClassCanReallyBeStressedOut",
+            new[]
+            {
+                "newCharacterSet\x99\x01\x02",
+                "UpdatedRandomValue",
+                "TestEmptyString",
+                "FinalTestValue",
+            },
+            new[] { 0b11001100, 1234, 5678, 1000000 },
+            new[] { "finalTest1", "finalTest2", "finalTest3" }
+        )]
+        public void TestListSettings(
+            string SettingName,
+            string[] ls1Array,
+            int[] ls2Array,
+            string[] ls3Array
+        )
         {
             // Convert arrays to Lists manually
             List<string> ls1 = ls1Array.ToList();
@@ -153,11 +244,20 @@ namespace UniGetUI.Core.SettingsEngine.Tests
             List<SerializableTest> ls3 = [];
             foreach (var item in ls3Array.ToList())
             {
-                ls3.Add(new SerializableTest(item, new Random().Next(), new SerializableTestSub(item + new Random().Next(), new Random().Next())));
+                ls3.Add(
+                    new SerializableTest(
+                        item,
+                        new Random().Next(),
+                        new SerializableTestSub(item + new Random().Next(), new Random().Next())
+                    )
+                );
             }
 
             Settings.ClearList(SettingName);
-            Assert.Empty(Settings.GetList<object>(SettingName) ?? ["this shouldn't be null; something's wrong"]);
+            Assert.Empty(
+                Settings.GetList<object>(SettingName)
+                    ?? ["this shouldn't be null; something's wrong"]
+            );
             Settings.SetList(SettingName, ls1);
             Assert.NotEmpty(Settings.GetList<string>(SettingName) ?? []);
             Assert.Equal(ls1[0], Settings.GetListItem<string>(SettingName, 0));
@@ -173,9 +273,19 @@ namespace UniGetUI.Core.SettingsEngine.Tests
             Assert.Equal("this is now a test case", Settings.GetListItem<string>(SettingName, 3));
             Assert.Null(Settings.GetListItem<string>(SettingName, 4));
 
-            Assert.Equal(Settings.GetListItem<string>(SettingName, 0), JsonSerializer.Deserialize<List<string>>(File.ReadAllText(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, $"{SettingName}.json")), Settings.SerializationOptions)[0]);
+            List<string>? persistedList = JsonSerializer.Deserialize<List<string>>(
+                File.ReadAllText(
+                    Path.Join(CoreData.UniGetUIUserConfigurationDirectory, $"{SettingName}.json")
+                ),
+                Settings.SerializationOptions
+            );
+            Assert.NotNull(persistedList);
+            Assert.Equal(Settings.GetListItem<string>(SettingName, 0), persistedList[0]);
             Settings.ClearList(SettingName);
-            Assert.Empty(Settings.GetList<object>(SettingName) ?? ["this shouldn't be null; something's wrong"]);
+            Assert.Empty(
+                Settings.GetList<object>(SettingName)
+                    ?? ["this shouldn't be null; something's wrong"]
+            );
 
             Settings.SetList(SettingName, ls2);
             Assert.NotEmpty(Settings.GetList<int>(SettingName) ?? []);
@@ -187,24 +297,62 @@ namespace UniGetUI.Core.SettingsEngine.Tests
             Assert.False(Settings.RemoveFromList(SettingName, ls2[0]));
             Assert.False(Settings.ListContains(SettingName, ls2[0]));
 
-            Settings.SetList(SettingName, ls3);
-            Assert.Equal(ls3.Count, Settings.GetList<SerializableTest>(SettingName)?.Count);
-            Assert.Equal(ls3[1].sub.sub, Settings.GetListItem<SerializableTest>(SettingName, 1)?.sub.sub);
-            Assert.True(Settings.RemoveFromList(SettingName, ls3[0]));
-            Assert.False(Settings.RemoveFromList(SettingName, ls3[0]));
-            Assert.Equal(ls3[1].sub.sub, Settings.GetListItem<SerializableTest>(SettingName, 0)?.sub.sub);
+            Assert.Throws<InvalidOperationException>(() => Settings.SetList(SettingName, ls3));
             Settings.ClearList(SettingName); // Cleanup
-            Assert.Empty(Settings.GetList<object>(SettingName) ?? ["this shouldn't be null; something's wrong"]);
-            Assert.False(File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, $"{SettingName}.json")));
+            Assert.Empty(
+                Settings.GetList<object>(SettingName)
+                    ?? ["this shouldn't be null; something's wrong"]
+            );
+            Assert.False(
+                File.Exists(
+                    Path.Join(CoreData.UniGetUIUserConfigurationDirectory, $"{SettingName}.json")
+                )
+            );
         }
 
         [Theory]
-        [InlineData("dTestSetting1", new string[] { "UpdatedFirstValue", "RandomString1", "RandomTestValue", "AnotherRandomValue" }, new int[] { 9, 15, 21, 1001, 4567 }, new string[] { "itemA", "itemB", "itemC" })]
-        [InlineData("dktjgshdfsd", new string[] { "newValue1", "updatedString", "emptyString", "randomSymbols@123" }, new int[] { 42, 23, 17, 98765, 3482 }, new string[] { "itemX", "itemY", "itemZ" })]
-        [InlineData("dª", new string[] { "UniqueVal1", "NewVal2", "AnotherVal3", "TestVal4" }, new int[] { 123, 456, 789, 321, 654 }, new string[] { "item1", "item2", "item3" })]
-        [InlineData("dTestSettingEntry With A  Space", new string[] { "ChangedFirstValue", "AlteredSecondVal", "TestedValue", "FinalVal" }, new int[] { 23, 98, 456, 753, 951 }, new string[] { "testA", "testB", "testC" })]
-        [InlineData("dVeryVeryLongTestSettingEntrySoTheClassCanReallyBeStressedOut", new string[] { "newCharacterSet\x99\x01\x02", "UpdatedRandomValue", "TestEmptyString", "FinalTestValue" }, new int[] { 0b11001100, 1234, 5678, 1000000 }, new string[] { "finalTest1", "finalTest2", "finalTest3" })]
-        public void TestDictionarySettings(string SettingName, string[] keyArray, int[] intArray, string[] strArray)
+        [InlineData(
+            Settings.K.Test2,
+            new[] { "UpdatedFirstValue", "RandomString1", "RandomTestValue", "AnotherRandomValue" },
+            new[] { 9, 15, 21, 1001, 4567 },
+            new[] { "itemA", "itemB", "itemC" }
+        )]
+        [InlineData(
+            Settings.K.Test3,
+            new[] { "newValue1", "updatedString", "emptyString", "randomSymbols@123" },
+            new[] { 42, 23, 17, 98765, 3482 },
+            new[] { "itemX", "itemY", "itemZ" }
+        )]
+        [InlineData(
+            Settings.K.Test4,
+            new[] { "UniqueVal1", "NewVal2", "AnotherVal3", "TestVal4" },
+            new[] { 123, 456, 789, 321, 654 },
+            new[] { "item1", "item2", "item3" }
+        )]
+        [InlineData(
+            Settings.K.Test5,
+            new[] { "ChangedFirstValue", "AlteredSecondVal", "TestedValue", "FinalVal" },
+            new[] { 23, 98, 456, 753, 951 },
+            new[] { "testA", "testB", "testC" }
+        )]
+        [InlineData(
+            Settings.K.Test6,
+            new[]
+            {
+                "newCharacterSet\x99\x01\x02",
+                "UpdatedRandomValue",
+                "TestEmptyString",
+                "FinalTestValue",
+            },
+            new[] { 0b11001100, 1234, 5678, 1000000 },
+            new[] { "finalTest1", "finalTest2", "finalTest3" }
+        )]
+        public void TestDictionarySettings(
+            Settings.K SettingName,
+            string[] keyArray,
+            int[] intArray,
+            string[] strArray
+        )
         {
             Dictionary<string, SerializableTest?> test = [];
             Dictionary<string, SerializableTest?> nonEmptyDictionary = [];
@@ -222,48 +370,33 @@ namespace UniGetUI.Core.SettingsEngine.Tests
                 );
             }
 
-            string randStr = new Random().Next().ToString();
-            Settings.SetDictionaryItem(randStr, "key", 12);
-            Assert.Equal(12, Settings.GetDictionaryItem<string, int>(randStr, "key"));
-            Settings.SetDictionary(SettingName, test);
-            Assert.Equal(JsonSerializer.Serialize(test, Settings.SerializationOptions), File.ReadAllText(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, $"{SettingName}.json")));
-            Assert.Equal(test[keyArray[0]]?.sub.count, Settings.GetDictionary<string, SerializableTest?>(SettingName)?[keyArray[0]]?.sub.count);
-            Assert.Equal(test[keyArray[1]]?.sub.count, Settings.GetDictionaryItem<string, SerializableTest?>(SettingName, keyArray[1])?.sub.count);
-            Settings.SetDictionaryItem(SettingName, keyArray[0], test[keyArray[1]]);
-            Assert.Equal(test[keyArray[1]]?.sub.count, Settings.GetDictionaryItem<string, SerializableTest?>(SettingName, keyArray[0])?.sub.count);
-            Assert.NotEqual(test[keyArray[0]]?.sub.count, Settings.GetDictionaryItem<string, SerializableTest?>(SettingName, keyArray[0])?.sub.count);
-            Assert.Equal(test[keyArray[1]]?.sub.count, Settings.GetDictionaryItem<string, SerializableTest?>(SettingName, keyArray[1])?.sub.count);
-            Assert.Equal(test[keyArray[1]]?.count, Settings.SetDictionaryItem(
-                SettingName,
-                keyArray[0],
-                new SerializableTest(
-                    "this is not test data",
-                    -12000,
-                    new SerializableTestSub("this sub is not test data", -13000)
-                )
-            )?.count);
-            Assert.Equal(-12000, Settings.GetDictionaryItem<string, SerializableTest?>(SettingName, keyArray[0])?.count);
-            Assert.Equal("this is not test data", Settings.GetDictionaryItem<string, SerializableTest?>(SettingName, keyArray[0])?.title);
-            Assert.Equal(-13000, Settings.GetDictionaryItem<string, SerializableTest?>(SettingName, keyArray[0])?.sub.count);
-            Settings.SetDictionaryItem(SettingName, "this is not a test data key", test[keyArray[0]]);
-            Assert.Equal(test[keyArray[0]]?.title, Settings.GetDictionaryItem<string, SerializableTest?>(SettingName, "this is not a test data key")?.title);
-            Assert.Equal(test[keyArray[0]]?.sub.count, Settings.GetDictionaryItem<string, SerializableTest?>(SettingName, "this is not a test data key")?.sub.count);
-            Assert.True(Settings.DictionaryContainsKey<string, SerializableTest?>(SettingName, "this is not a test data key"));
-            Assert.True(Settings.DictionaryContainsValue<string, SerializableTest?>(SettingName, test[keyArray[0]]));
-            Assert.NotNull(Settings.RemoveDictionaryKey<string, SerializableTest?>(SettingName, "this is not a test data key"));
-            Assert.Null(Settings.RemoveDictionaryKey<string, SerializableTest?>(SettingName, "this is not a test data key"));
-            Assert.False(Settings.DictionaryContainsKey<string, SerializableTest?>(SettingName, "this is not a test data key"));
-            Assert.False(Settings.DictionaryContainsValue<string, SerializableTest?>(SettingName, test[keyArray[0]]));
-            Assert.True(Settings.DictionaryContainsValue<string, SerializableTest?>(SettingName, test[keyArray[2]]));
-
-            Assert.Equal(
-                JsonSerializer.Serialize(Settings.GetDictionary<string, SerializableTest>(SettingName), Settings.SerializationOptions),
-                File.ReadAllText(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, $"{SettingName}.json"))
-            );
+            Settings.SetDictionaryItem(SettingName, "key", 12);
+            Assert.Equal(12, Settings.GetDictionaryItem<string, int>(SettingName, "key"));
+            Assert.Throws<InvalidOperationException>(() => Settings.SetDictionary(SettingName, test));
 
             Settings.ClearDictionary(SettingName); // Cleanup
-            Assert.Empty(Settings.GetDictionary<string, SerializableTest?>(SettingName) ?? nonEmptyDictionary);
-            Assert.False(File.Exists(Path.Join(CoreData.UniGetUIUserConfigurationDirectory, $"{SettingName}.json")));
+            Assert.Empty(
+                Settings.GetDictionary<string, SerializableTest?>(SettingName) ?? nonEmptyDictionary
+            );
+            Assert.False(
+                File.Exists(
+                    Path.Join(
+                        CoreData.UniGetUIUserConfigurationDirectory,
+                        $"{Settings.ResolveKey(SettingName)}.json"
+                    )
+                )
+            );
+        }
+
+        [Fact]
+        public static void EnsureAllKeysResolve()
+        {
+            foreach (Settings.K key in Enum.GetValues(typeof(Settings.K)))
+            {
+                if (key is Settings.K.Unset)
+                    continue;
+                Assert.NotEmpty(Settings.ResolveKey(key));
+            }
         }
     }
 }

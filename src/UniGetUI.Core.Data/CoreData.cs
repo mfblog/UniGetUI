@@ -1,26 +1,121 @@
-﻿using System.Diagnostics;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using System.Text.Json.Serialization.Metadata;
+using System.Diagnostics;
+using System.Text;
 using UniGetUI.Core.Logging;
 
 namespace UniGetUI.Core.Data
 {
     public static class CoreData
     {
-        private static int? __code_page;
-        public static int CODE_PAGE { get => __code_page ??= GetCodePage(); }
-        public const string VersionName = "3.2.0"; // Do not modify this line, use file scripts/apply_versions.py
-        public const int BuildNumber = 90; // Do not modify this line, use file scripts/apply_versions.py
+        private const string GitHubReleasePageBaseUrl = "https://github.com/Devolutions/UniGetUI/releases/tag/";
+        private const string GitHubReleaseApiBaseUrl = "https://api.github.com/repos/Devolutions/UniGetUI/releases/tags/";
+        public const string ReleaseNotesUrl = "https://devolutions.net/unigetui/release-notes/";
 
-        public const string UserAgentString = $"UniGetUI/{VersionName} (https://marticliment.com/unigetui/; contact@marticliment.com)";
+        private static int? __code_page;
+        public static int CODE_PAGE
+        {
+            get => __code_page ??= GetCodePage();
+        }
+
+        private static Encoding? __console_encoding;
+        // The encoding CLIs that don't force UTF-8 (e.g. Chocolatey) actually emit their console output in.
+        public static Encoding ConsoleEncoding
+        {
+            get
+            {
+                if (__console_encoding is not null)
+                    return __console_encoding;
+                try
+                {
+                    Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+                    __console_encoding = Encoding.GetEncoding(CODE_PAGE);
+                }
+                catch (Exception e)
+                {
+                    Logger.Warn($"Could not resolve console code page {CODE_PAGE}, falling back to UTF-8");
+                    Logger.Warn(e);
+                    __console_encoding = Encoding.UTF8;
+                }
+                return __console_encoding;
+            }
+        }
+        public const string VersionName = "2026.1.0"; // Do not modify this line, use file scripts/set-version.ps1
+        public const int BuildNumber = 106; // Do not modify this line, use file scripts/set-version.ps1
+
+        public const string UserAgentString =
+            $"UniGetUI/{VersionName} (https://devolutions.net/unigetui; unigetui@devolutions.net)";
 
         public const string AppIdentifier = "MartiCliment.UniGetUI";
         public const string MainWindowIdentifier = "MartiCliment.UniGetUI.MainInterface";
 
-        private static bool? IS_PORTABLE;
-        private static string? PORTABLE_PATH;
-        public static bool IsPortable { get => IS_PORTABLE ?? false; }
+        public static string GetGitHubReleaseTag()
+        {
+            return GetGitHubReleaseTag(VersionName);
+        }
+
+        public static string[] GetGitHubReleaseTagCandidates()
+        {
+            return GetGitHubReleaseTagCandidates(VersionName);
+        }
+
+        public static string GetGitHubReleaseTag(string versionName)
+        {
+            return GetGitHubReleaseTagCandidates(versionName)[0];
+        }
+
+        public static string[] GetGitHubReleaseTagCandidates(string versionName)
+        {
+            string normalizedVersion = string.IsNullOrWhiteSpace(versionName)
+                ? VersionName
+                : versionName.Trim();
+
+            if (normalizedVersion.StartsWith("v", StringComparison.OrdinalIgnoreCase))
+            {
+                return [normalizedVersion];
+            }
+
+            string prefixedTag = $"v{normalizedVersion}";
+            return UsesPrefixedCalendarReleaseTags(normalizedVersion)
+                ? [prefixedTag, normalizedVersion]
+                : [normalizedVersion, prefixedTag];
+        }
+
+        public static string GetGitHubReleasePageUrl()
+        {
+            return ReleaseNotesUrl;
+        }
+
+        public static string GetGitHubReleasePageUrlFromTag(string releaseTag)
+        {
+            return GitHubReleasePageBaseUrl + releaseTag;
+        }
+
+        public static string GetGitHubReleaseApiUrlFromTag(string releaseTag)
+        {
+            return GitHubReleaseApiBaseUrl + Uri.EscapeDataString(releaseTag);
+        }
+
+        private static bool UsesPrefixedCalendarReleaseTags(string versionName)
+        {
+            int dotIndex = versionName.IndexOf('.');
+            if (dotIndex != 4 || dotIndex == versionName.Length - 1)
+            {
+                return false;
+            }
+
+            ReadOnlySpan<char> year = versionName.AsSpan(0, dotIndex);
+            return int.TryParse(year, out int parsedYear) && parsedYear >= 2000;
+        }
+
+        public static bool IsPortable => AppPaths.IsPortable;
+
+        /// <summary>
+        /// Where the per-user data directory lives, regardless of whether portable mode is
+        /// active. Unlike <see cref="UniGetUIDataDirectory"/> this creates and migrates nothing.
+        /// </summary>
+        public static string? TEST_PerUserDataDirectoryOverride { private get; set; }
+
+        public static string PerUserDataDirectoryPath =>
+            TEST_PerUserDataDirectoryOverride ?? Path.Join(GetLocalDataRoot(), "UniGetUI");
 
         public static string? TEST_DataDirectoryOverride { private get; set; }
 
@@ -36,36 +131,16 @@ namespace UniGetUI.Core.Data
                     return TEST_DataDirectoryOverride;
                 }
 
-                if (IS_PORTABLE is null)
+                if (AppPaths.PortableDataDirectory is { } portableDirectory)
                 {
-                    IS_PORTABLE = File.Exists(Path.Join(UniGetUIExecutableDirectory, "ForceUniGetUIPortable"));
-
-                    if (IS_PORTABLE is true)
-                    {
-                        string path = Path.Join(UniGetUIExecutableDirectory, "Settings");
-                        try
-                        {
-                            if (!Directory.Exists(path)) Directory.CreateDirectory(path);
-                            var testfilepath = Path.Join(path, "PermissionTestFile");
-                            File.WriteAllText(testfilepath, "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
-                            PORTABLE_PATH = path;
-                            return path;
-                        }
-                        catch (Exception ex)
-                        {
-                            IS_PORTABLE = false;
-                            Logger.Error(
-                                $"Could not acces/write path {path}. UniGetUI will NOT be run in portable mode, and User settings will be used instead");
-                            Logger.Error(ex);
-                        }
-                    }
-                } else if (IS_PORTABLE is true)
-                {
-                    return PORTABLE_PATH ?? throw new Exception("This shouldn't be possible");
+                    return portableDirectory;
                 }
 
-                string old_path = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".wingetui");
-                string new_path = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UniGetUI");
+                string old_path = Path.Join(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    ".wingetui"
+                );
+                string new_path = Path.Join(GetLocalDataRoot(), "UniGetUI");
                 return GetNewDataDirectoryOrMoveOld(old_path, new_path);
             }
         }
@@ -85,14 +160,24 @@ namespace UniGetUI.Core.Data
                     //Migration case
                     try
                     {
-                        Logger.Info($"Moving configuration files from '{oldConfigPath}' to '{newConfigPath}'");
+                        Logger.Info(
+                            $"Moving configuration files from '{oldConfigPath}' to '{newConfigPath}'"
+                        );
                         Directory.CreateDirectory(newConfigPath);
 
-                        foreach (string file in Directory.GetFiles(oldConfigPath, "*.*", SearchOption.TopDirectoryOnly))
+                        foreach (
+                            string file in Directory.GetFiles(
+                                oldConfigPath,
+                                "*.*",
+                                SearchOption.TopDirectoryOnly
+                            )
+                        )
                         {
                             string fileName = Path.GetFileName(file);
                             string fileExtension = Path.GetExtension(file);
-                            bool isConfigFile = string.IsNullOrEmpty(fileExtension) || fileExtension.ToLowerInvariant() == ".json";
+                            bool isConfigFile =
+                                string.IsNullOrEmpty(fileExtension)
+                                || fileExtension.ToLowerInvariant() == ".json";
 
                             if (isConfigFile)
                             {
@@ -101,18 +186,24 @@ namespace UniGetUI.Core.Data
                                 if (!File.Exists(newFile))
                                 {
                                     File.Move(file, newFile);
-                                    Logger.Debug($"Moved configuration file '{file}' to '{newFile}'");
+                                    Logger.Debug(
+                                        $"Moved configuration file '{file}' to '{newFile}'"
+                                    );
                                 }
                                 // Clean up old file to avoid duplicates and confusion
                                 else
                                 {
-                                    Logger.Warn($"Configuration file '{newFile}' already exists, skipping move from '{file}'.");
+                                    Logger.Warn(
+                                        $"Configuration file '{newFile}' already exists, skipping move from '{file}'."
+                                    );
                                     File.Delete(file);
                                 }
                             }
                             else
                             {
-                                Logger.Debug($"Skipping non-configuration file '{file}' during migration.");
+                                Logger.Debug(
+                                    $"Skipping non-configuration file '{file}' during migration."
+                                );
                             }
                         }
                         Logger.Info($"Configuration files moved successfully to '{newConfigPath}'");
@@ -120,7 +211,9 @@ namespace UniGetUI.Core.Data
                     catch (Exception ex)
                     {
                         // Fallback to old path if migration fails to not break functionality
-                        Logger.Error($"Error moving configuration files from '{oldConfigPath}' to '{newConfigPath}'. Using old path for now. Manual migration might be needed.");
+                        Logger.Error(
+                            $"Error moving configuration files from '{oldConfigPath}' to '{newConfigPath}'. Using old path for now. Manual migration might be needed."
+                        );
                         Logger.Error(ex);
                         return oldConfigPath;
                     }
@@ -134,6 +227,29 @@ namespace UniGetUI.Core.Data
             }
         }
 
+        private static string[]? _sanitizedProcessArguments;
+
+        /// <summary>
+        /// Records the process arguments after startup has removed anything that could only
+        /// have been injected, so later consumers do not have to re-read the raw OS command
+        /// line. The executable path is preserved so the shape matches
+        /// Environment.GetCommandLineArgs().
+        /// </summary>
+        public static void SetSanitizedProcessArguments(string[] args)
+        {
+            string[] raw = Environment.GetCommandLineArgs();
+            _sanitizedProcessArguments = raw.Length > 0 ? [raw[0], .. args] : [.. args];
+        }
+
+        /// <summary>
+        /// The sanitized process arguments when startup has published them, and the raw OS
+        /// command line otherwise.
+        /// </summary>
+        public static string[] GetProcessArguments()
+        {
+            return _sanitizedProcessArguments ?? Environment.GetCommandLineArgs();
+        }
+
         /// <summary>
         /// The directory where the installation options are stored. The directory is automatically created if it does not exist.
         /// </summary>
@@ -142,7 +258,8 @@ namespace UniGetUI.Core.Data
             get
             {
                 string path = Path.Join(UniGetUIDataDirectory, "InstallationOptions");
-                if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+                if (!Directory.Exists(path))
+                    Directory.CreateDirectory(path);
                 return path;
             }
         }
@@ -155,7 +272,8 @@ namespace UniGetUI.Core.Data
             get
             {
                 string path = Path.Join(UniGetUIDataDirectory, "CachedMetadata");
-                if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+                if (!Directory.Exists(path))
+                    Directory.CreateDirectory(path);
                 return path;
             }
         }
@@ -168,7 +286,8 @@ namespace UniGetUI.Core.Data
             get
             {
                 string path = Path.Join(UniGetUIDataDirectory, "CachedMedia");
-                if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+                if (!Directory.Exists(path))
+                    Directory.CreateDirectory(path);
                 return path;
             }
         }
@@ -181,7 +300,8 @@ namespace UniGetUI.Core.Data
             get
             {
                 string path = Path.Join(UniGetUIDataDirectory, "CachedLanguageFiles");
-                if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+                if (!Directory.Exists(path))
+                    Directory.CreateDirectory(path);
                 return path;
             }
         }
@@ -193,8 +313,17 @@ namespace UniGetUI.Core.Data
         {
             get
             {
-                string old_dir = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "WingetUI");
-                string new_dir = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "UniGetUI");
+                if (AppPaths.PortableDataDirectory is { } portableDirectory)
+                {
+                    string portableBackups = Path.Join(portableDirectory, "Backups");
+                    if (!Directory.Exists(portableBackups))
+                        Directory.CreateDirectory(portableBackups);
+                    return portableBackups;
+                }
+
+                string documentsDirectory = GetDocumentsRoot();
+                string old_dir = Path.Join(documentsDirectory, "WingetUI");
+                string new_dir = Path.Join(documentsDirectory, "UniGetUI");
                 return GetNewDataDirectoryOrMoveOld(old_dir, new_dir);
             }
         }
@@ -206,10 +335,12 @@ namespace UniGetUI.Core.Data
         /// The ID of the notification that is used to inform the user that updates are available
         /// </summary>
         public const int UpdatesAvailableNotificationTag = 1234;
+
         /// <summary>
         /// The ID of the notification that is used to inform the user that UniGetUI can be updated
         /// </summary>
         public const int UniGetUICanBeUpdated = 1235;
+
         /// <summary>
         /// The ID of the notification that is used to inform the user that shortcuts are available for deletion
         /// </summary>
@@ -218,21 +349,13 @@ namespace UniGetUI.Core.Data
         /// <summary>
         /// A path pointing to the location where the app is installed
         /// </summary>
-        public static string UniGetUIExecutableDirectory
-        {
-            get
-            {
-                string? dir = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
-                if (dir is not null)
-                {
-                    return dir;
-                }
+        public static string UniGetUIExecutableDirectory => AppPaths.InstallationDirectory;
 
-                Logger.Error("System.Reflection.Assembly.GetExecutingAssembly().Location returned an empty path");
-
-                return Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "UniGetUI");
-            }
-        }
+        public static string ResolveInstallationDirectory(
+            string executableDirectory,
+            Func<string, bool>? fileExists = null,
+            Func<string, bool>? directoryExists = null
+        ) => AppPaths.ResolveInstallationDirectory(executableDirectory, fileExists, directoryExists);
 
         /// <summary>
         /// A path pointing to the executable file of the app
@@ -244,16 +367,26 @@ namespace UniGetUI.Core.Data
                 string? filename = Process.GetCurrentProcess().MainModule?.FileName;
                 if (filename is not null)
                 {
-                    return filename.Replace(".dll", ".exe");
+                    return NormalizeExecutablePath(filename);
                 }
 
-                Logger.Error("System.Reflection.Assembly.GetExecutingAssembly().Location returned an empty path");
+                Logger.Error(
+                    "System.Reflection.Assembly.GetExecutingAssembly().Location returned an empty path"
+                );
 
-                return Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "UniGetUI", "UniGetUI.exe");
+                return OperatingSystem.IsWindows()
+                    ? Path.Join(UniGetUIExecutableDirectory, "UniGetUI.exe")
+                    : NormalizeExecutablePath(Path.Join(UniGetUIExecutableDirectory, "UniGetUI"));
             }
         }
 
         public static string ElevatorPath = "";
+
+        /// <summary>
+        /// Extra arguments to insert between the elevator binary and the elevated command.
+        /// For example, "-A" when using sudo with an askpass helper on Linux.
+        /// </summary>
+        public static string ElevatorArgs = "";
 
         /// <summary>
         /// This method will return the most appropriate data directory.
@@ -275,7 +408,13 @@ namespace UniGetUI.Core.Data
             {
                 try
                 {
-                    foreach (string old_subdir in Directory.GetDirectories(old_path, "*", SearchOption.AllDirectories))
+                    foreach (
+                        string old_subdir in Directory.GetDirectories(
+                            old_path,
+                            "*",
+                            SearchOption.AllDirectories
+                        )
+                    )
                     {
                         string new_subdir = old_subdir.Replace(old_path, new_path);
                         if (!Directory.Exists(new_subdir))
@@ -289,7 +428,13 @@ namespace UniGetUI.Core.Data
                         }
                     }
 
-                    foreach (string old_file in Directory.GetFiles(old_path, "*", SearchOption.AllDirectories))
+                    foreach (
+                        string old_file in Directory.GetFiles(
+                            old_path,
+                            "*",
+                            SearchOption.AllDirectories
+                        )
+                    )
                     {
                         string new_file = old_file.Replace(old_path, new_path);
                         if (!File.Exists(new_file))
@@ -304,16 +449,28 @@ namespace UniGetUI.Core.Data
                         }
                     }
 
-                    foreach (string old_subdir in Directory.GetDirectories(old_path, "*", SearchOption.AllDirectories).Reverse())
+                    foreach (
+                        string old_subdir in Directory.GetDirectories(
+                            old_path,
+                            "*",
+                            SearchOption.AllDirectories
+                        )
+                    )
                     {
-                        if (!Directory.EnumerateFiles(old_subdir).Any() && !Directory.EnumerateDirectories(old_subdir).Any())
+                        if (
+                            !Directory.EnumerateFiles(old_subdir).Any()
+                            && !Directory.EnumerateDirectories(old_subdir).Any()
+                        )
                         {
                             Logger.Debug("Deleting old empty subdirectory " + old_subdir);
                             Directory.Delete(old_subdir);
                         }
                     }
 
-                    if (!Directory.EnumerateFiles(old_path).Any() && !Directory.EnumerateDirectories(old_path).Any())
+                    if (
+                        !Directory.EnumerateFiles(old_path).Any()
+                        && !Directory.EnumerateDirectories(old_path).Any()
+                    )
                     {
                         Logger.Info("Deleting old Chocolatey directory " + old_path);
                         Directory.Delete(old_path);
@@ -328,7 +485,9 @@ namespace UniGetUI.Core.Data
                 }
             }
 
-            if (/*Directory.Exists(new_path)*/Directory.Exists(old_path))
+            if ( /*Directory.Exists(new_path)*/
+                Directory.Exists(old_path)
+            )
             {
                 try
                 {
@@ -338,7 +497,12 @@ namespace UniGetUI.Core.Data
                 }
                 catch (Exception e)
                 {
-                    Logger.Error("Cannot move old data directory to new location. Directory to move: " + old_path + ". Destination: " + new_path);
+                    Logger.Error(
+                        "Cannot move old data directory to new location. Directory to move: "
+                            + old_path
+                            + ". Destination: "
+                            + new_path
+                    );
                     Logger.Error(e);
                     return old_path;
                 }
@@ -352,7 +516,9 @@ namespace UniGetUI.Core.Data
             }
             catch (Exception e)
             {
-                Logger.Error("Could not create new directory. You may perhaps need to disable Controlled Folder Access from Windows Settings or make an exception for UniGetUI.");
+                Logger.Error(
+                    "Could not create new directory. You may perhaps need to disable Controlled Folder Access from Windows Settings or make an exception for UniGetUI."
+                );
                 Logger.Error(e);
                 return new_path;
             }
@@ -360,6 +526,11 @@ namespace UniGetUI.Core.Data
 
         private static int GetCodePage()
         {
+            if (!OperatingSystem.IsWindows())
+            {
+                return Encoding.UTF8.CodePage;
+            }
+
             try
             {
                 using Process p = new Process
@@ -370,7 +541,7 @@ namespace UniGetUI.Core.Data
                         RedirectStandardOutput = true,
                         UseShellExecute = false,
                         CreateNoWindow = true,
-                    }
+                    },
                 };
                 p.Start();
                 string contents = p.StandardOutput.ReadToEnd();
@@ -393,5 +564,78 @@ namespace UniGetUI.Core.Data
             }
         }
 
+        public static readonly string PowerShell5 = OperatingSystem.IsWindows()
+            ? Path.Join(Environment.SystemDirectory, "windowspowershell\\v1.0\\powershell.exe")
+            : "pwsh";
+
+        /// <summary>
+        /// The controlled launcher script that runs PowerShell package operations. It lives next to
+        /// the application binary so it carries the same integrity as the executable itself, and it
+        /// is invoked with -File so the operation parameters bind as data instead of being
+        /// reassembled into a script body the way -Command does.
+        /// </summary>
+        public static string PowerShellOperationLauncher =>
+            Path.Join(
+                UniGetUIExecutableDirectory,
+                "Assets",
+                "Utilities",
+                "unigetui_ps_operation.ps1"
+            );
+
+        private static string GetLocalDataRoot()
+        {
+            string localApplicationData = Environment.GetFolderPath(
+                Environment.SpecialFolder.LocalApplicationData
+            );
+            if (!string.IsNullOrWhiteSpace(localApplicationData))
+            {
+                return localApplicationData;
+            }
+
+            string? xdgDataHome = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
+            if (!string.IsNullOrWhiteSpace(xdgDataHome))
+            {
+                return xdgDataHome;
+            }
+
+            return Path.Join(GetUserHomeDirectory(), ".local", "share");
+        }
+
+        private static string GetDocumentsRoot()
+        {
+            string documentsDirectory = Environment.GetFolderPath(
+                Environment.SpecialFolder.MyDocuments
+            );
+            if (!string.IsNullOrWhiteSpace(documentsDirectory))
+            {
+                return documentsDirectory;
+            }
+
+            return Path.Join(GetUserHomeDirectory(), "Documents");
+        }
+
+        private static string GetUserHomeDirectory()
+        {
+            string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            if (!string.IsNullOrWhiteSpace(userProfile))
+            {
+                return userProfile;
+            }
+
+            return Environment.GetEnvironmentVariable("HOME") ?? AppContext.BaseDirectory;
+        }
+
+        private static string NormalizeExecutablePath(string path)
+        {
+            if (
+                OperatingSystem.IsWindows()
+                && path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                return Path.ChangeExtension(path, ".exe");
+            }
+
+            return path;
+        }
     }
 }

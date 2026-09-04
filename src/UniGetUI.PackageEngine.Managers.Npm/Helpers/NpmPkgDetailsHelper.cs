@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using UniGetUI.Core.IconEngine;
 using UniGetUI.Core.Logging;
+using UniGetUI.Core.Tools;
 using UniGetUI.PackageEngine.Classes.Manager.BaseProviders;
 using UniGetUI.PackageEngine.Enums;
 using UniGetUI.PackageEngine.Interfaces;
@@ -12,32 +13,48 @@ namespace UniGetUI.PackageEngine.Managers.NpmManager
 {
     internal sealed class NpmPkgDetailsHelper : BasePkgDetailsHelper
     {
-        public NpmPkgDetailsHelper(Npm manager) : base(manager) { }
+        public NpmPkgDetailsHelper(Npm manager)
+            : base(manager) { }
 
         protected override void GetDetails_UnSafe(IPackageDetails details)
         {
             try
             {
+                var identifier = NpmPackageIdentifier.Parse(details.Package.Id);
                 details.InstallerType = "Tarball";
-                details.ManifestUrl = new Uri($"https://www.npmjs.com/package/{details.Package.Id}");
-                details.ReleaseNotesUrl = new Uri($"https://www.npmjs.com/package/{details.Package.Id}?activeTab=versions");
+                details.ManifestUrl = new Uri(
+                    $"https://www.npmjs.com/package/{identifier.GetRegistryName()}"
+                );
+                details.ReleaseNotesUrl = new Uri(
+                    $"https://www.npmjs.com/package/{identifier.GetRegistryName()}?activeTab=versions"
+                );
 
                 using Process p = new();
                 p.StartInfo = new ProcessStartInfo
                 {
                     FileName = Manager.Status.ExecutablePath,
-                    Arguments = Manager.Properties.ExecutableCallArgs + " show " + details.Package.Id + " --json",
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     RedirectStandardInput = true,
                     CreateNoWindow = true,
-                    WorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                    StandardOutputEncoding = System.Text.Encoding.UTF8
+                    WorkingDirectory = Environment.GetFolderPath(
+                        Environment.SpecialFolder.UserProfile
+                    ),
+                    StandardOutputEncoding = System.Text.Encoding.UTF8,
                 };
+                Manager.Status.ApplyArguments(
+                    p.StartInfo,
+                    "show",
+                    identifier.GetRegistryName(),
+                    "--json"
+                );
 
-                IProcessTaskLogger logger = Manager.TaskLogger.CreateNew(LoggableTaskType.LoadPackageDetails, p);
-                p.Start();
+                IProcessTaskLogger logger = Manager.TaskLogger.CreateNew(
+                    LoggableTaskType.LoadPackageDetails,
+                    p
+                );
+                CoreTools.StartAndCloseStandardInput(p);
 
                 string strContents = p.StandardOutput.ReadToEnd();
                 logger.AddToStdOut(strContents);
@@ -46,20 +63,91 @@ namespace UniGetUI.PackageEngine.Managers.NpmManager
                 details.License = contents?["license"]?.ToString();
                 details.Description = contents?["description"]?.ToString();
 
-                if (Uri.TryCreate(contents?["homepage"]?.ToString() ?? "", UriKind.RelativeOrAbsolute, out var homepageUrl))
+                if (
+                    Uri.TryCreate(
+                        contents?["homepage"]?.ToString() ?? "",
+                        UriKind.RelativeOrAbsolute,
+                        out var homepageUrl
+                    )
+                )
                     details.HomepageUrl = homepageUrl;
 
                 details.Publisher = (contents?["maintainers"] as JsonArray)?[0]?.ToString();
                 details.Author = contents?["author"]?.ToString();
-                details.UpdateDate = contents?["time"]?[contents?["dist-tags"]?["latest"]?.ToString() ?? details.Package.VersionString]?.ToString();
+                details.UpdateDate = contents?["time"]?[
+                    contents?["dist-tags"]?["latest"]?.ToString() ?? details.Package.VersionString
+                ]?.ToString();
 
-                if (Uri.TryCreate(contents?["dist"]?["tarball"]?.ToString() ?? "", UriKind.RelativeOrAbsolute, out var installerUrl))
+                if (
+                    Uri.TryCreate(
+                        contents?["dist"]?["tarball"]?.ToString() ?? "",
+                        UriKind.RelativeOrAbsolute,
+                        out var installerUrl
+                    )
+                )
                     details.InstallerUrl = installerUrl;
 
-                if (int.TryParse(contents?["dist"]?["unpackedSize"]?.ToString() ?? "", NumberStyles.Any, CultureInfo.InvariantCulture, out int installerSize))
-                    details.InstallerSize = installerSize / 1048576d;
+                if (
+                    int.TryParse(
+                        contents?["dist"]?["unpackedSize"]?.ToString() ?? "",
+                        NumberStyles.Any,
+                        CultureInfo.InvariantCulture,
+                        out int installerSize
+                    )
+                )
+                    details.InstallerSize = installerSize;
 
                 details.InstallerHash = contents?["dist"]?["integrity"]?.ToString();
+
+                details.Dependencies.Clear();
+                HashSet<string> addedDeps = new();
+                foreach (var rawDep in (contents?["dependencies"]?.AsObject() ?? []))
+                {
+                    if (addedDeps.Contains(rawDep.Key))
+                        continue;
+                    addedDeps.Add(rawDep.Key);
+
+                    details.Dependencies.Add(
+                        new()
+                        {
+                            Name = rawDep.Key,
+                            Version = rawDep.Value?.GetValue<string>() ?? "",
+                            Mandatory = true,
+                        }
+                    );
+                }
+
+                foreach (var rawDep in (contents?["devDependencies"]?.AsObject() ?? []))
+                {
+                    if (addedDeps.Contains(rawDep.Key))
+                        continue;
+                    addedDeps.Add(rawDep.Key);
+
+                    details.Dependencies.Add(
+                        new()
+                        {
+                            Name = rawDep.Key,
+                            Version = rawDep.Value?.GetValue<string>() ?? "",
+                            Mandatory = false,
+                        }
+                    );
+                }
+
+                foreach (var rawDep in (contents?["peerDependencies"]?.AsObject() ?? []))
+                {
+                    if (addedDeps.Contains(rawDep.Key))
+                        continue;
+                    addedDeps.Add(rawDep.Key);
+
+                    details.Dependencies.Add(
+                        new()
+                        {
+                            Name = rawDep.Key,
+                            Version = rawDep.Value?.GetValue<string>() ?? "",
+                            Mandatory = false,
+                        }
+                    );
+                }
 
                 logger.AddToStdErr(p.StandardError.ReadToEnd());
                 p.WaitForExit();
@@ -85,40 +173,61 @@ namespace UniGetUI.PackageEngine.Managers.NpmManager
 
         protected override string? GetInstallLocation_UnSafe(IPackage package)
         {
+            var identifier = NpmPackageIdentifier.Parse(package.Id);
             if (package.OverridenOptions.Scope is PackageScope.Local)
-                return Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "node_modules", package.Id);
-            return Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Roaming", "npm",
-                "node_modules", package.Id);
+                return Path.Join(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    "node_modules",
+                    identifier.GetInstallLocationName()
+                );
+            // ApplicationData already resolves to the Roaming folder; npm's default global prefix
+            // is %AppData%\npm, so global modules live under %AppData%\npm\node_modules.
+            return Path.Join(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "npm",
+                "node_modules",
+                identifier.GetInstallLocationName()
+            );
         }
 
         protected override IReadOnlyList<string> GetInstallableVersions_UnSafe(IPackage package)
         {
-            using Process p = new()
+            var identifier = NpmPackageIdentifier.Parse(package.Id);
+            var startInfo = new ProcessStartInfo
             {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = Manager.Status.ExecutablePath,
-                    Arguments =
-                        Manager.Properties.ExecutableCallArgs + " show " + package.Id + " versions --json",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    RedirectStandardInput = true,
-                    CreateNoWindow = true,
-                    WorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                    StandardOutputEncoding = System.Text.Encoding.UTF8
-                }
+                FileName = Manager.Status.ExecutablePath,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                RedirectStandardInput = true,
+                CreateNoWindow = true,
+                WorkingDirectory = Environment.GetFolderPath(
+                    Environment.SpecialFolder.UserProfile
+                ),
+                StandardOutputEncoding = System.Text.Encoding.UTF8,
             };
+            Manager.Status.ApplyArguments(
+                startInfo,
+                "show",
+                identifier.GetRegistryName(),
+                "versions",
+                "--json"
+            );
 
-            IProcessTaskLogger logger = Manager.TaskLogger.CreateNew(LoggableTaskType.LoadPackageVersions, p);
-            p.Start();
+            using Process p = new() { StartInfo = startInfo };
+
+            IProcessTaskLogger logger = Manager.TaskLogger.CreateNew(
+                LoggableTaskType.LoadPackageVersions,
+                p
+            );
+            CoreTools.StartAndCloseStandardInput(p);
 
             string strContents = p.StandardOutput.ReadToEnd();
             logger.AddToStdOut(strContents);
             JsonArray? rawVersions = JsonNode.Parse(strContents) as JsonArray;
 
             List<string> versions = [];
-            foreach(JsonNode? raw_ver in rawVersions ?? [])
+            foreach (JsonNode? raw_ver in rawVersions ?? [])
             {
                 if (raw_ver is not null)
                     versions.Add(raw_ver.ToString());

@@ -1,7 +1,6 @@
 using System.Net;
 using System.Text.Json;
-using System.Text.Json.Serialization.Metadata;
-using Windows.Security.Credentials;
+using UniGetUI.Core.Data;
 using UniGetUI.Core.Logging;
 
 namespace UniGetUI.Core.SettingsEngine;
@@ -13,38 +12,30 @@ public partial class Settings
      *
      */
 
-    public static bool AreNotificationsDisabled()
-    {
-        return Get("DisableSystemTray") || Get("DisableNotifications");
-    }
+    public static bool AreNotificationsDisabled() =>
+        Get(K.DisableSystemTray) || Get(K.DisableNotifications);
 
-    public static bool AreUpdatesNotificationsDisabled()
-    {
-        return AreNotificationsDisabled() || Get("DisableUpdatesNotifications");
-    }
+    public static bool AreUpdatesNotificationsDisabled() =>
+        AreNotificationsDisabled() || Get(K.DisableUpdatesNotifications);
 
-    public static bool AreErrorNotificationsDisabled()
-    {
-        return AreNotificationsDisabled() || Get("DisableErrorNotifications");
-    }
+    public static bool AreErrorNotificationsDisabled() =>
+        AreNotificationsDisabled() || Get(K.DisableErrorNotifications);
 
-    public static bool AreSuccessNotificationsDisabled()
-    {
-        return AreNotificationsDisabled() || Get("DisableSuccessNotifications");
-    }
+    public static bool AreSuccessNotificationsDisabled() =>
+        AreNotificationsDisabled() || Get(K.DisableSuccessNotifications);
 
-    public static bool AreProgressNotificationsDisabled()
-    {
-        return AreNotificationsDisabled() || Get("DisableProgressNotifications");
-    }
+    public static bool AreProgressNotificationsDisabled() =>
+        AreNotificationsDisabled() || Get(K.DisableProgressNotifications);
 
     public static Uri? GetProxyUrl()
     {
-        if (!Settings.Get("EnableProxy")) return null;
+        if (!Get(K.EnableProxy))
+            return null;
 
-        string plainUrl = Settings.GetValue("ProxyURL");
+        string plainUrl = GetValue(K.ProxyURL);
         Uri.TryCreate(plainUrl, UriKind.RelativeOrAbsolute, out Uri? var);
-        if(Settings.Get("EnableProxy") && var is null) Logger.Warn($"Proxy setting {plainUrl} is not valid");
+        if (Get(K.EnableProxy) && var is null)
+            Logger.Warn($"Proxy setting {plainUrl} is not valid");
         return var;
     }
 
@@ -54,14 +45,10 @@ public partial class Settings
     {
         try
         {
-            var vault = new PasswordVault();
-            var credentials = vault.Retrieve(PROXY_RES_ID, Settings.GetValue("ProxyUsername"));
-
-            return new NetworkCredential()
-            {
-                UserName = credentials.UserName,
-                Password = credentials.Password,
-            };
+            string username = GetValue(K.ProxyUsername);
+            return username.Length is 0
+                ? null
+                : CoreCredentialStore.GetCredential(PROXY_RES_ID, username);
         }
         catch (Exception ex)
         {
@@ -75,9 +62,8 @@ public partial class Settings
     {
         try
         {
-            var vault = new PasswordVault();
-            Settings.SetValue("ProxyUsername", username);
-            vault.Add(new PasswordCredential(PROXY_RES_ID, username, password));
+            SetValue(K.ProxyUsername, username);
+            CoreCredentialStore.SetCredential(PROXY_RES_ID, username, password);
         }
         catch (Exception ex)
         {
@@ -88,7 +74,6 @@ public partial class Settings
 
     public static JsonSerializerOptions SerializationOptions = new()
     {
-        TypeInfoResolver = new DefaultJsonTypeInfoResolver(),
         AllowTrailingCommas = true,
         WriteIndented = true,
     };

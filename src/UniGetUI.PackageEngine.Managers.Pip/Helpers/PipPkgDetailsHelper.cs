@@ -12,16 +12,24 @@ namespace UniGetUI.PackageEngine.Managers.PipManager
 {
     internal sealed class PipPkgDetailsHelper : BasePkgDetailsHelper
     {
-        public PipPkgDetailsHelper(Pip manager) : base(manager) { }
+        public PipPkgDetailsHelper(Pip manager)
+            : base(manager) { }
 
         protected override void GetDetails_UnSafe(IPackageDetails details)
         {
-            INativeTaskLogger logger = Manager.TaskLogger.CreateNew(LoggableTaskType.LoadPackageDetails);
+            INativeTaskLogger logger = Manager.TaskLogger.CreateNew(
+                LoggableTaskType.LoadPackageDetails
+            );
 
-            string JsonString;
-            HttpClient client = new(CoreTools.GenericHttpClientParameters);
+            using HttpClient client = new(CoreTools.GenericHttpClientParameters);
             client.DefaultRequestHeaders.UserAgent.ParseAdd(CoreData.UserAgentString);
-            JsonString = client.GetStringAsync($"https://pypi.org/pypi/{details.Package.Id}/json").GetAwaiter().GetResult();
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"https://pypi.org/pypi/{details.Package.Id}/json"
+            );
+            using HttpResponseMessage response = client.Send(request);
+            response.EnsureSuccessStatusCode();
+            string JsonString = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
 
             JsonObject? contents = JsonNode.Parse(JsonString) as JsonObject;
 
@@ -32,10 +40,22 @@ namespace UniGetUI.PackageEngine.Managers.PipManager
                 details.Publisher = info["maintainer"]?.ToString();
                 details.License = info["license"]?.ToString();
 
-                if (Uri.TryCreate(info["home_page"]?.ToString(), UriKind.RelativeOrAbsolute, out var homepageUrl))
+                if (
+                    Uri.TryCreate(
+                        info["home_page"]?.ToString(),
+                        UriKind.RelativeOrAbsolute,
+                        out var homepageUrl
+                    )
+                )
                     details.HomepageUrl = homepageUrl;
 
-                if (Uri.TryCreate(info["package_url"]?.ToString(), UriKind.RelativeOrAbsolute, out var packageUrl))
+                if (
+                    Uri.TryCreate(
+                        info["package_url"]?.ToString(),
+                        UriKind.RelativeOrAbsolute,
+                        out var packageUrl
+                    )
+                )
                     details.ManifestUrl = packageUrl;
 
                 if (info["classifiers"] is JsonArray classifiers)
@@ -55,6 +75,21 @@ namespace UniGetUI.PackageEngine.Managers.PipManager
                     }
                     details.Tags = Tags.ToArray();
                 }
+
+                details.Dependencies.Clear();
+                foreach (var rawDep in (info?["requires_dist"]?.AsArray() ?? []))
+                {
+                    string line = rawDep?.GetValue<string>().Split(';')[0] ?? "";
+                    string name = line.Split(['>', '<', '=', '!'])[0];
+                    details.Dependencies.Add(
+                        new()
+                        {
+                            Name = name,
+                            Version = line[name.Length..],
+                            Mandatory = true,
+                        }
+                    );
+                }
             }
 
             JsonObject? url = contents?["url"] as JsonObject;
@@ -65,11 +100,20 @@ namespace UniGetUI.PackageEngine.Managers.PipManager
                 if (url["digests"] is JsonObject digests)
                     details.InstallerHash = digests["sha256"]?.ToString();
 
-                if (Uri.TryCreate(url["url"]?.ToString(), UriKind.RelativeOrAbsolute, out var installerUrl))
+                if (
+                    Uri.TryCreate(
+                        url["url"]?.ToString(),
+                        UriKind.RelativeOrAbsolute,
+                        out var installerUrl
+                    )
+                )
                 {
-                    details.InstallerType = url["url"]?.ToString().Split('.')[^1].Replace("whl", "Wheel");
+                    details.InstallerType = url["url"]
+                        ?.ToString()
+                        .Split('.')[^1]
+                        .Replace("whl", "Wheel");
                     details.InstallerUrl = installerUrl;
-                    details.InstallerSize = CoreTools.GetFileSize(installerUrl);
+                    details.InstallerSize = CoreTools.GetFileSizeAsLong(installerUrl);
                 }
 
                 details.UpdateDate = url["upload_time"]?.ToString();
@@ -90,7 +134,12 @@ namespace UniGetUI.PackageEngine.Managers.PipManager
 
         protected override string? GetInstallLocation_UnSafe(IPackage package)
         {
-            var full_path = Path.Join(Path.GetDirectoryName(Manager.Status.ExecutablePath), "Lib", "site-packages", package.Id);
+            var full_path = Path.Join(
+                Path.GetDirectoryName(Manager.Status.ExecutablePath),
+                "Lib",
+                "site-packages",
+                package.Id
+            );
             return Directory.Exists(full_path) ? full_path : Path.GetDirectoryName(full_path);
         }
 
@@ -101,17 +150,25 @@ namespace UniGetUI.PackageEngine.Managers.PipManager
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = Manager.Status.ExecutablePath,
-                    Arguments = Manager.Properties.ExecutableCallArgs + " index versions " + package.Id + " " + Pip.GetProxyArgument(),
+                    Arguments =
+                        Manager.Status.ExecutableCallArgs
+                        + " index versions "
+                        + package.Id
+                        + " "
+                        + Pip.GetProxyArgument(),
                     RedirectStandardOutput = true,
                     RedirectStandardInput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
                     CreateNoWindow = true,
-                    StandardOutputEncoding = System.Text.Encoding.UTF8
-                }
+                    StandardOutputEncoding = System.Text.Encoding.UTF8,
+                },
             };
 
-            IProcessTaskLogger logger = Manager.TaskLogger.CreateNew(Enums.LoggableTaskType.LoadPackageVersions, p);
+            IProcessTaskLogger logger = Manager.TaskLogger.CreateNew(
+                LoggableTaskType.LoadPackageVersions,
+                p
+            );
             p.Start();
 
             string? line;

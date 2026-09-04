@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace UniGetUI.Core.Classes.Tests;
 
 public class TaskRecyclerTests
@@ -8,16 +10,26 @@ public class TaskRecyclerTests
         return new Random().Next();
     }
 
-    private class TestClass
+    private sealed class TestClass
     {
-        public TestClass() {}
+        public TestClass() { }
 
+        [SuppressMessage(
+            "Performance",
+            "CA1822:Mark members as static",
+            Justification = "Instance methods are required to validate TaskRecycler instance-bound delegate behavior."
+        )]
         public string SlowMethod2()
         {
             Thread.Sleep(1000);
             return new Random().Next().ToString();
         }
 
+        [SuppressMessage(
+            "Performance",
+            "CA1822:Mark members as static",
+            Justification = "Instance methods are required to validate TaskRecycler instance-bound delegate behavior."
+        )]
         public string SlowMethod3()
         {
             Thread.Sleep(1000);
@@ -38,7 +50,7 @@ public class TaskRecyclerTests
         var task1 = TaskRecycler<int>.RunOrAttachAsync(MySlowMethod1);
         var task2 = TaskRecycler<int>.RunOrAttachAsync(MySlowMethod1);
         int result1 = await task1;
-        int result2 = await  task2;
+        int result2 = await task2;
         Assert.Equal(result1, result2);
 
         // The same static method should be cached, and therefore the return value should be the same, but different from previous runs
@@ -115,6 +127,27 @@ public class TaskRecyclerTests
         Assert.NotEqual(result4, result5);
         Assert.NotEqual(result1, result4);
         Assert.NotEqual(result3, result5);
+    }
+
+    [Fact]
+    public async Task FaultedTaskIsEvictedBeforeTheNextCall()
+    {
+        int calls = 0;
+        Func<int> method = () =>
+        {
+            if (Interlocked.Increment(ref calls) == 1)
+                throw new InvalidOperationException("Expected first attempt failure");
+            return 42;
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await TaskRecycler<int>.RunOrAttachAsync(method)
+        );
+
+        int result = await TaskRecycler<int>.RunOrAttachAsync(method);
+
+        Assert.Equal(42, result);
+        Assert.Equal(2, calls);
     }
 
     [Fact]

@@ -5,13 +5,15 @@ namespace UniGetUI.PackageEngine.Serializable.Tests;
 
 public class TestSerializablePackage
 {
-    public static SerializableInstallationOptions TestOptions = new()
+    public static InstallOptions TestOptions = new()
     {
         SkipHashCheck = true,
-        CustomParameters = ["a", "b", "c"],
+        CustomParameters_Install = ["a", "b", "c"],
+        CustomParameters_Update = ["b", "b", "b"],
+        CustomParameters_Uninstall = ["c", "b", "a"],
         Architecture = "ia64",
         Version = "-1",
-        RunAsAdministrator = true
+        RunAsAdministrator = true,
     };
 
     public static SerializableUpdatesOptions TestUpdatesOpts = new()
@@ -21,17 +23,17 @@ public class TestSerializablePackage
     };
 
     [Theory]
-    [InlineData("", "", "", "", "")]
-    [InlineData("UniGetUI", "MartiCliment.UniGetUI.Pre-Release", "3.2.1-beta1", "WinGet", "winget")]
-    [InlineData("Mr. Trololo", "\n\n\n", "\x12", "\r", "beanz")]
-    public void ToAndFromJsonNode(string id, string name, string version, string manager, string source)
+    [InlineData("", "", "", "")]
+    [InlineData("UniGetUI", "MartiCliment.UniGetUI.Pre-Release", "3.2.1-beta1", "WinGet")]
+    [InlineData("Mr. Trololo", "\n\n\n", "\x12", "\r")]
+    public void ToAndFromJsonNode(string id, string name, string version, string manager)
     {
         var originalObject1 = new SerializablePackage()
         {
             Id = id,
             Name = name,
             Source = manager,
-            Version = version
+            Version = version,
         };
 
         var object2 = new SerializablePackage();
@@ -51,32 +53,58 @@ public class TestSerializablePackage
 
     [Theory]
     [InlineData("{}", "", "", "", "", "", false, "")]
-    [InlineData("""
-                {
-                  "Name": "name",
-                  "Id": "true",
-                  "Updates" : {
-                    "IgnoredVersion": "Hey"
-                  }
+    [InlineData(
+        """
+            {
+              "Name": "name",
+              "Id": "true",
+              "Updates" : {
+                "IgnoredVersion": "Hey"
+              }
+            }
+            """,
+        "true",
+        "name",
+        "",
+        "",
+        "",
+        false,
+        "Hey"
+    )]
+    [InlineData(
+        """
+             {
+                "Version": "false",
+                "Source": "lol",
+                "ManagerName": "Rodolfo Chikilicuatre",
+                "UNKNOWN_VAL1": true,
+                "UNKNOWN_VAL2": null,
+                "UNKNOWN_VAL3": 22,
+                "UNKNOWN_VAL4": "hehe",
+                "InstallationOptions" : {
+                    "SkipHashCheck": true,
+                    "OverridesNextLevelOpts": false
                 }
-                """, "true", "name", "", "", "", false, "Hey")]
-
-    [InlineData("""
-                 {
-                    "Version": "false",
-                    "Source": "lol",
-                    "ManagerName": "Rodolfo Chikilicuatre",
-                    "UNKNOWN_VAL1": true,
-                    "UNKNOWN_VAL2": null,
-                    "UNKNOWN_VAL3": 22,
-                    "UNKNOWN_VAL4": "hehe",
-                    "InstallationOptions" : {
-                        "SkipHashCheck": true
-                    }
-                }
-                """, "", "", "false", "Rodolfo Chikilicuatre", "lol", true, "")]
-
-    public void FromJson(string JSON, string id, string name, string version, string manager, string source, bool skipHash, string ignoredVer)
+            }
+            """,
+        "",
+        "",
+        "false",
+        "Rodolfo Chikilicuatre",
+        "lol",
+        true,
+        ""
+    )]
+    public void FromJson(
+        string JSON,
+        string id,
+        string name,
+        string version,
+        string manager,
+        string source,
+        bool skipHash,
+        string ignoredVer
+    )
     {
         Assert.NotEmpty(JSON);
         var jsonContent = JsonNode.Parse(JSON);
@@ -88,8 +116,11 @@ public class TestSerializablePackage
         Assert.Equal(manager, o2.ManagerName);
         Assert.Equal(source, o2.Source);
         Assert.Equal(version, o2.Version);
-        TestSerializableInstallationOptions.AreEqual(new() { SkipHashCheck = skipHash }, o2.InstallationOptions);
-        TestSerializableUpdatesOptions.AreEqual(new(){IgnoredVersion = ignoredVer}, o2.Updates);
+        TestInstallOptions.AssertAreEqual(
+            new() { SkipHashCheck = skipHash },
+            o2.InstallationOptions
+        );
+        TestSerializableUpdatesOptions.AreEqual(new() { IgnoredVersion = ignoredVer }, o2.Updates);
     }
 
     internal static void AreEqual(SerializablePackage o1, SerializablePackage o2)
@@ -99,7 +130,7 @@ public class TestSerializablePackage
         Assert.Equal(o1.Source, o2.Source);
         Assert.Equal(o1.Version, o2.Version);
         Assert.Equal(o1.ManagerName, o2.ManagerName);
-        TestSerializableInstallationOptions.AreEqual(o1.InstallationOptions, o2.InstallationOptions);
+        TestInstallOptions.AssertAreEqual(o1.InstallationOptions, o2.InstallationOptions);
         TestSerializableUpdatesOptions.AreEqual(o1.Updates, o2.Updates);
     }
 }

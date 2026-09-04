@@ -4,7 +4,7 @@ using UniGetUI.PackageEngine.Serializable;
 
 namespace UniGetUI.PackageEngine.Classes.Serializable
 {
-    public class SerializablePackage: SerializableComponent<SerializablePackage>
+    public class SerializablePackage : SerializableComponent<SerializablePackage>
     {
         public string Id { get; set; } = "";
         public string Name { get; set; } = "";
@@ -12,7 +12,7 @@ namespace UniGetUI.PackageEngine.Classes.Serializable
         public string Source { get; set; } = "";
         public string ManagerName { get; set; } = "";
 
-        public SerializableInstallationOptions InstallationOptions { get; set; } = new();
+        public InstallOptions InstallationOptions { get; set; } = new();
         public SerializableUpdatesOptions Updates { get; set; } = new();
 
         public override SerializablePackage Copy()
@@ -41,14 +41,35 @@ namespace UniGetUI.PackageEngine.Classes.Serializable
             this.Updates = new(data[nameof(Updates)] ?? new JsonObject());
         }
 
-        public SerializablePackage() : base()
+        public override JsonObject AsJsonNode()
         {
+            JsonObject obj = new();
+            obj.Add(nameof(Id), Id);
+            obj.Add(nameof(Name), Name);
+            obj.Add(nameof(Version), Version);
+            obj.Add(nameof(Source), Source);
+            obj.Add(nameof(ManagerName), ManagerName);
+
+            var ioNode = InstallationOptions.AsJsonNode();
+            if (ioNode.Count > 0)
+            {
+                obj.Add(nameof(InstallationOptions), InstallationOptions.AsJsonNode());
+            }
+
+            var updNode = Updates.AsJsonNode();
+            if (updNode.Count > 0)
+            {
+                obj.Add(nameof(Updates), updNode);
+            }
+
+            return obj;
         }
 
-        public SerializablePackage(JsonNode data) : base(data)
-        {
-        }
+        public SerializablePackage()
+            : base() { }
 
+        public SerializablePackage(JsonNode data)
+            : base(data) { }
 
         /// <summary>
         /// Returns an equivalent copy of the current package as an Invalid Serializable Package.
